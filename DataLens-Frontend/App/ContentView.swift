@@ -14,7 +14,7 @@ struct ContentView: View {
                 case .home:
                     HomeView(navigationViewModel: navigationViewModel)
                 case .importData:
-                    PlaceholderDetailView(title: AppConstants.Sidebar.importData)
+                    ImportView(navigationViewModel: navigationViewModel)
                 case .dashboard:
                     PlaceholderDetailView(title: AppConstants.Sidebar.dashboard)
                 case .charts:

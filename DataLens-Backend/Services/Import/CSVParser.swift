@@ -4,6 +4,7 @@ import Foundation
 enum CSVError: Error, LocalizedError {
     case invalidEncoding
     case emptyFile
+    case tooLarge
     case fileAccessError(String)
     
     var errorDescription: String? {
@@ -12,6 +13,8 @@ enum CSVError: Error, LocalizedError {
             return "Unable to read file content. Please check if the file encoding is UTF-8."
         case .emptyFile:
             return "The selected CSV file is empty."
+        case .tooLarge:
+            return "File exceeds the 50 MB limit. Please split the file into smaller parts."
         case .fileAccessError(let msg):
             return "Could not access the file: \(msg)"
         }
@@ -21,6 +24,9 @@ enum CSVError: Error, LocalizedError {
 /// Helper service for loading, parsing, and type-inferencing CSV files
 struct CSVParser {
     
+    /// 50 MB file size limit in bytes
+    private static let maxFileSizeBytes: Int = 50 * 1024 * 1024
+
     /// Parses a CSV file asynchronously on a background thread
     static func parse(url: URL) async throws -> DataSet {
         // Resolve security scoped resource if sandboxed in macOS
@@ -29,6 +35,12 @@ struct CSVParser {
             if accessing {
                 url.stopAccessingSecurityScopedResource()
             }
+        }
+
+        // Guard against files that exceed the size limit
+        let attrs = try? FileManager.default.attributesOfItem(atPath: url.path)
+        if let size = attrs?[.size] as? Int, size > maxFileSizeBytes {
+            throw CSVError.tooLarge
         }
         
         do {

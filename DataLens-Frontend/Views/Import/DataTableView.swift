@@ -16,8 +16,7 @@ struct DataTableView: View {
     var body: some View {
         ZStack {
             VStack(spacing: 0) {
-                // Top Toolbar: Dataset Name, Search Input, and Re-import Button
-                HStack(spacing: 16) {
+                HStack(spacing: 12) {
                     if let dataset = dataViewModel.currentDataSet {
                         VStack(alignment: .leading, spacing: 4) {
                             Text(dataset.name)
@@ -28,17 +27,59 @@ struct DataTableView: View {
                                 .foregroundColor(AppColors.textSecondary)
                         }
                     }
-                    
+
                     Spacer()
-                    
+
                     // Live Search Bar
                     TableSearchBar(text: $dataViewModel.searchText, isFocused: $isSearchFocused)
-                        .frame(width: 300)
-                    
-                    // Re-import Button
+                        .frame(width: 260)
+
+                    // Undo Button
+                    Button(action: { dataViewModel.undo() }) {
+                        Image(systemName: "arrow.uturn.backward")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(dataViewModel.canUndo ? AppColors.textPrimary : AppColors.textSecondary)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!dataViewModel.canUndo)
+                    .help(dataViewModel.canUndo ? "Undo: \(dataViewModel.undoLabel)" : "Nothing to undo")
+
+                    // Redo Button
+                    Button(action: { dataViewModel.redo() }) {
+                        Image(systemName: "arrow.uturn.forward")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(dataViewModel.canRedo ? AppColors.textPrimary : AppColors.textSecondary)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!dataViewModel.canRedo)
+                    .help(dataViewModel.canRedo ? "Redo: \(dataViewModel.redoLabel)" : "Nothing to redo")
+
+                    // Clean Data Button
                     Button(action: {
-                        dataViewModel.reset()
+                        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                            dataViewModel.isCleaningPanelOpen.toggle()
+                        }
                     }) {
+                        HStack(spacing: 5) {
+                            Image(systemName: "wand.and.stars")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text("Clean Data")
+                                .font(.system(size: 13, weight: .semibold))
+                        }
+                        .foregroundColor(AppColors.textPrimary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(dataViewModel.isCleaningPanelOpen
+                                      ? AppColors.accent
+                                      : AppColors.accent.opacity(0.6))
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    // Re-import Button
+                    Button(action: { dataViewModel.reset() }) {
                         HStack(spacing: 6) {
                             Image(systemName: "arrow.counterclockwise")
                                 .font(.system(size: 12, weight: .semibold))
@@ -46,8 +87,8 @@ struct DataTableView: View {
                                 .font(.system(size: 13, weight: .semibold))
                         }
                         .foregroundColor(AppColors.textPrimary)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 7)
                         .background(
                             RoundedRectangle(cornerRadius: 6)
                                 .fill(isReimportHovered ? AppColors.accent.opacity(0.85) : AppColors.accent)
@@ -59,24 +100,23 @@ struct DataTableView: View {
                     }
                     .buttonStyle(.plain)
                     .onHover { hovering in
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            isReimportHovered = hovering
-                        }
+                        withAnimation(.easeInOut(duration: 0.2)) { isReimportHovered = hovering }
                     }
                 }
                 .padding(.horizontal, 24)
-                .padding(.vertical, 16)
+                .padding(.vertical, 14)
                 .background(AppColors.sidebar)
                 .overlay(
                     VStack {
                         Spacer()
-                        Rectangle()
-                            .fill(AppColors.border)
-                            .frame(height: 1)
+                        Rectangle().fill(AppColors.border).frame(height: 1)
                     }
                 )
                 
-                // Grid Data Area
+                // Grid Data Area + optional cleaning panel side by side
+                HStack(spacing: 0) {
+                    // Main grid
+                    VStack(spacing: 0) {
                 if let dataset = dataViewModel.currentDataSet {
                     if dataViewModel.filteredRows.isEmpty && !dataViewModel.searchText.isEmpty {
                         // Helpful Empty Results layout
@@ -94,20 +134,15 @@ struct DataTableView: View {
                                         )
                                 }
                                 .frame(height: 0)
-                                
-                                // Table Header Row (Column Headers)
+
+                                // Table Header Row — uses visibleColumns only
                                 HStack(spacing: 0) {
-                                    // Spacing matching pinned columns width
-                                    Spacer()
-                                        .frame(width: 210)
-                                    
-                                    // Scrollable headers (Index 1 to N-1)
-                                    ForEach(dataset.columns.dropFirst()) { col in
+                                    Spacer().frame(width: 210)
+                                    ForEach(dataset.visibleColumns.dropFirst()) { col in
                                         HeaderCell(col: col, hoveredHeader: $hoveredHeader)
                                     }
                                 }
                                 .overlay(
-                                    // Pinned left headers (Row number header + Column 0 header)
                                     HStack(spacing: 0) {
                                         Text("#")
                                             .font(.system(size: 11, weight: .bold))
@@ -115,8 +150,7 @@ struct DataTableView: View {
                                             .frame(width: 50, alignment: .center)
                                             .frame(maxHeight: .infinity)
                                             .background(AppColors.sidebar)
-                                        
-                                        if let firstCol = dataset.columns.first {
+                                        if let firstCol = dataset.visibleColumns.first {
                                             HeaderCell(col: firstCol, hoveredHeader: $hoveredHeader)
                                         }
                                     }
@@ -128,18 +162,16 @@ struct DataTableView: View {
                                 .overlay(
                                     VStack {
                                         Spacer()
-                                        Rectangle()
-                                            .fill(AppColors.border)
-                                            .frame(height: 1)
+                                        Rectangle().fill(AppColors.border).frame(height: 1)
                                     }
                                 )
-                                
+
                                 // Table Data Rows
                                 ForEach(Array(dataViewModel.filteredRows.enumerated()), id: \.element.id) { index, row in
                                     DataTableRowView(
                                         rowIndex: index,
                                         row: row,
-                                        columns: dataset.columns,
+                                        columns: dataset.visibleColumns,
                                         scrollOffset: scrollOffset,
                                         query: dataViewModel.searchText,
                                         onClick: {
@@ -157,7 +189,18 @@ struct DataTableView: View {
                         }
                     }
                 }
-                
+                    } // end inner VStack
+
+                    // Sliding cleaning panel
+                    if dataViewModel.isCleaningPanelOpen {
+                        DataCleaningView()
+                            .transition(.asymmetric(
+                                insertion: .move(edge: .trailing).combined(with: .opacity),
+                                removal:   .move(edge: .trailing).combined(with: .opacity)
+                            ))
+                    }
+                } // end HStack
+
                 Spacer(minLength: 0)
                 
                 // Summary Footer: Fixed at bottom of table
@@ -261,7 +304,7 @@ struct DataTableView: View {
             
             // Full Details popup modal sheet overlay
             if let row = selectedRow, let dataset = dataViewModel.currentDataSet {
-                RowDetailPopup(row: row, columns: dataset.columns, onClose: {
+                RowDetailPopup(row: row, columns: dataset.visibleColumns, onClose: {
                     withAnimation(.easeInOut(duration: 0.2)) {
                         selectedRow = nil
                     }
@@ -289,70 +332,144 @@ struct DataTableView: View {
 
 // MARK: - Subviews
 
-/// HeaderCell handles sorting cycles and statistics hover popovers
+/// HeaderCell handles sorting cycles, statistics hover popovers, and a right-click context menu
+/// for column management operations (type change, rename, hide, duplicate, delete).
 struct HeaderCell: View {
     let col: Column
     @EnvironmentObject var dataViewModel: DataViewModel
     @Binding var hoveredHeader: String?
-    
-    @State private var isHovered = false
-    
+
+    @State private var isHovered      = false
+    @State private var isRenaming     = false
+    @State private var renameText     = ""
+
     var body: some View {
-        HStack(spacing: 6) {
-            Image(systemName: typeIconName(for: col.type))
-                .font(.system(size: 11, weight: .bold))
-                .foregroundColor(AppColors.success)
-            
-            Text(col.name)
-                .font(.system(size: 12, weight: .bold))
-                .foregroundColor(AppColors.textPrimary)
-                .lineLimit(1)
-            
-            Spacer()
-            
-            // Sort indicator
-            if dataViewModel.sortColumn == col.name {
-                Image(systemName: "arrow.up")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundColor(AppColors.accent)
-                    .rotationEffect(.degrees(dataViewModel.sortAscending ? 0 : 180))
-            }
-        }
-        .frame(width: 160, alignment: .leading)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 12)
-        .background(AppColors.sidebar)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                dataViewModel.sortData(by: col.name)
-            }
-        }
-        .onHover { hovering in
-            isHovered = hovering
-            withAnimation(.easeInOut(duration: 0.2)) {
-                hoveredHeader = hovering ? col.name : nil
-            }
-        }
-        .overlay(
-            Group {
-                if hoveredHeader == col.name {
-                    StatsPopoverView(columnName: col.name, stats: dataViewModel.displayStats[col.name])
-                        .offset(y: 40)
-                        .zIndex(10)
+        Group {
+            if isRenaming {
+                // Inline rename text field
+                TextField("Column name", text: $renameText, onCommit: commitRename)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12, weight: .bold))
+                    .foregroundColor(AppColors.textPrimary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 12)
+                    .frame(width: 160)
+                    .background(AppColors.cards)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 4)
+                            .stroke(AppColors.accent, lineWidth: 1.5)
+                    )
+                    .onExitCommand { isRenaming = false }
+            } else {
+                HStack(spacing: 6) {
+                    Image(systemName: col.type.iconName)
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(AppColors.success)
+
+                    Text(col.name)
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundColor(AppColors.textPrimary)
+                        .lineLimit(1)
+
+                    Spacer()
+
+                    // Sort direction indicator
+                    if dataViewModel.sortColumn == col.name {
+                        Image(systemName: "arrow.up")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundColor(AppColors.accent)
+                            .rotationEffect(.degrees(dataViewModel.sortAscending ? 0 : 180))
+                            .animation(.easeInOut(duration: 0.2), value: dataViewModel.sortAscending)
+                    }
+                }
+                .frame(width: 160, alignment: .leading)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 12)
+                .background(AppColors.sidebar)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        dataViewModel.sortData(by: col.name)
+                    }
+                }
+                .onHover { hovering in
+                    isHovered = hovering
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        hoveredHeader = hovering ? col.name : nil
+                    }
+                }
+                .overlay(
+                    Group {
+                        if hoveredHeader == col.name {
+                            StatsPopoverView(columnName: col.name,
+                                            stats: dataViewModel.displayStats[col.name])
+                                .offset(y: 40)
+                                .zIndex(10)
+                        }
+                    },
+                    alignment: .topLeading
+                )
+                .zIndex(isHovered ? 10 : 1)
+                // Right-click context menu
+                .contextMenu {
+                    // Change type sub-section
+                    Menu("Change Type") {
+                        Button {
+                            dataViewModel.changeColumnType(columnName: col.name, to: .number)
+                        } label: {
+                            Label("Number", systemImage: "number")
+                        }
+                        Button {
+                            dataViewModel.changeColumnType(columnName: col.name, to: .text)
+                        } label: {
+                            Label("Text", systemImage: "textformat")
+                        }
+                        Button {
+                            dataViewModel.changeColumnType(columnName: col.name, to: .date)
+                        } label: {
+                            Label("Date", systemImage: "calendar")
+                        }
+                    }
+
+                    Divider()
+
+                    Button {
+                        renameText  = col.name
+                        isRenaming  = true
+                    } label: {
+                        Label("Rename Column", systemImage: "pencil")
+                    }
+
+                    Button {
+                        dataViewModel.applyCleaningOperation(.hide(columnName: col.name))
+                    } label: {
+                        Label("Hide Column", systemImage: "eye.slash")
+                    }
+
+                    Button {
+                        dataViewModel.applyCleaningOperation(.duplicate(columnName: col.name))
+                    } label: {
+                        Label("Duplicate Column", systemImage: "plus.square.on.square")
+                    }
+
+                    Divider()
+
+                    Button(role: .destructive) {
+                        dataViewModel.applyCleaningOperation(.delete(columnName: col.name))
+                    } label: {
+                        Label("Delete Column", systemImage: "trash")
+                    }
                 }
             }
-            , alignment: .topLeading
-        )
-        .zIndex(isHovered ? 10 : 1)
-    }
-    
-    private func typeIconName(for type: ColumnType) -> String {
-        switch type {
-        case .number: return "number"
-        case .text: return "textformat"
-        case .date: return "calendar"
         }
+    }
+
+    private func commitRename() {
+        let newName = renameText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !newName.isEmpty && newName != col.name {
+            dataViewModel.applyCleaningOperation(.rename(columnName: col.name, newName: newName))
+        }
+        isRenaming = false
     }
 }
 

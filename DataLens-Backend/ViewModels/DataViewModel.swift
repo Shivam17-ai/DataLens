@@ -30,6 +30,70 @@ struct ColumnStats {
     var latestDate: Date?   = nil
 }
 
+/// Defines a distinct, value-type cleaning action that can be performed on the dataset.
+enum CleaningOperation {
+    case changeType(columnName: String, type: ColumnType)
+    case rename(columnName: String, newName: String)
+    case hide(columnName: String)
+    case duplicate(columnName: String)
+    case delete(columnName: String)
+    case removeMissing(columns: [String]?)
+    case fillMissing(columnName: String, strategy: FillStrategy)
+    case removeDuplicates(columns: [String]?)
+    case trimWhitespace(columnName: String)
+    case convertCase(columnName: String, conversion: CaseConversion)
+    case removeSpecialCharacters(columnName: String)
+    case findAndReplace(columnName: String, find: String, replace: String, caseSensitive: Bool)
+    case round(columnName: String, decimals: Int)
+    case normalize(columnName: String)
+    case standardize(columnName: String)
+    case removeOutliers(columnName: String, method: OutlierMethod)
+    case standardizeDate(columnName: String, format: String)
+    case extractDateComponent(columnName: String, component: DateComponent, newColumnName: String?)
+
+    /// Returns a localized display name describing the operation (used in tooltips, banners, and history tracking).
+    var label: String {
+        switch self {
+        case .changeType(let col, let type):
+            return "Change \(col) → \(type.label)"
+        case .rename(let col, let newName):
+            return "Rename \"\(col)\" → \"\(newName)\""
+        case .hide(let col):
+            return "Hide \"\(col)\""
+        case .duplicate(let col):
+            return "Duplicate \"\(col)\""
+        case .delete(let col):
+            return "Delete \"\(col)\""
+        case .removeMissing:
+            return "Remove Rows with Missing Values"
+        case .fillMissing(let col, _):
+            return "Fill Missing in \"\(col)\""
+        case .removeDuplicates:
+            return "Remove Duplicates"
+        case .trimWhitespace(let col):
+            return "Trim Whitespace in \"\(col)\""
+        case .convertCase(let col, let conv):
+            return conv == .upper ? "Uppercase \"\(col)\"" : "Lowercase \"\(col)\""
+        case .removeSpecialCharacters(let col):
+            return "Remove Special Chars in \"\(col)\""
+        case .findAndReplace(let col, _, _, _):
+            return "Find & Replace in \"\(col)\""
+        case .round(let col, let dec):
+            return "Round \"\(col)\" to \(dec) dp"
+        case .normalize(let col):
+            return "Normalize \"\(col)\""
+        case .standardize(let col):
+            return "Standardize \"\(col)\""
+        case .removeOutliers(let col, _):
+            return "Remove Outliers in \"\(col)\""
+        case .standardizeDate(let col, let fmt):
+            return "Format \"\(col)\" as \(fmt)"
+        case .extractDateComponent(let col, let comp, _):
+            return "Extract \(comp.rawValue) from \"\(col)\""
+        }
+    }
+}
+
 // MARK: - DataViewModel
 
 /// Shared state controller for the active dataset, import states, search, sort and statistics.
@@ -54,6 +118,25 @@ class DataViewModel: ObservableObject {
     @Published var searchText: String    = ""
     @Published var filteredRows: [Row]   = []
     @Published var displayStats: [String: ColumnStats] = [:]
+
+    // MARK: Cleaning State
+    /// Ring buffer of up to 10 DataSet snapshots for undo/redo
+    @Published var cleaningHistory: [DataSet] = []
+    @Published var historyIndex: Int          = -1
+    @Published var isCleaningPanelOpen: Bool  = false
+    @Published var cleaningMessage: String?   = nil
+
+    /// True when there is a previous state to restore
+    var canUndo: Bool { historyIndex > 0 }
+    /// True when there is a later state to move forward to
+    var canRedo: Bool { historyIndex < cleaningHistory.count - 1 }
+    /// Label of the operation that would be undone, for tooltip display
+    var undoLabel: String { historyIndex > 0 ? (cleaningHistory[historyIndex].operationLabel ?? "Undo") : "Undo" }
+    /// Label of the operation that would be re-applied, for tooltip display
+    var redoLabel: String {
+        let next = historyIndex + 1
+        return next < cleaningHistory.count ? (cleaningHistory[next].operationLabel ?? "Redo") : "Redo"
+    }
 
     // MARK: Private
     private var cancellables       = Set<AnyCancellable>()
@@ -85,7 +168,7 @@ class DataViewModel: ObservableObject {
         case "xlsx", "xls":
             importExcel(url: url)
         default:
-            showError("Unsupported file type ".\(ext)". Please import a CSV or Excel (.xlsx) file.")
+            showError("Unsupported file type \"\(ext)\". Please import a CSV or Excel (.xlsx) file.")
         }
     }
 
@@ -269,24 +352,134 @@ class DataViewModel: ObservableObject {
         currentDataSet?.columns.filter { $0.type == .text } ?? []
     }
 
+    // MARK: - Cleaning Operations
+
+    /// Runs a value-type CleaningOperation on a background thread and pushes the resulting DataSet onto the history stack.
+    func applyCleaningOperation(_ operation: CleaningOperation) {
+        guard let dataset = currentDataSet else { return }
+        isLoading = true
+        cleaningMessage = nil
+
+        Task {
+            let result: DataSet
+            var failCount = 0
+
+            switch operation {
+            case .changeType(let col, let targetType):
+                let (res, fc) = await DataCleaner.changeColumnType(dataset: dataset, columnName: col, to: targetType)
+                result = res
+                failCount = fc
+            case .rename(let col, let newName):
+                result = await DataCleaner.renameColumn(dataset: dataset, columnName: col, newName: newName)
+            case .hide(let col):
+                result = await DataCleaner.hideColumn(dataset: dataset, columnName: col)
+            case .duplicate(let col):
+                result = await DataCleaner.duplicateColumn(dataset: dataset, columnName: col)
+            case .delete(let col):
+                result = await DataCleaner.deleteColumn(dataset: dataset, columnName: col)
+            case .removeMissing(let cols):
+                result = await DataCleaner.removeMissingRows(dataset: dataset, columns: cols)
+            case .fillMissing(let col, let strategy):
+                result = await DataCleaner.fillMissing(dataset: dataset, columnName: col, strategy: strategy)
+            case .removeDuplicates(let cols):
+                result = await DataCleaner.removeDuplicates(dataset: dataset, columns: cols)
+            case .trimWhitespace(let col):
+                result = await DataCleaner.trimWhitespace(dataset: dataset, columnName: col)
+            case .convertCase(let col, let conversion):
+                result = await DataCleaner.convertCase(dataset: dataset, columnName: col, to: conversion)
+            case .removeSpecialCharacters(let col):
+                result = await DataCleaner.removeSpecialCharacters(dataset: dataset, columnName: col)
+            case .findAndReplace(let col, let find, let replace, let caseSensitive):
+                result = await DataCleaner.findAndReplace(dataset: dataset, columnName: col, find: find, replace: replace, caseSensitive: caseSensitive)
+            case .round(let col, let decimals):
+                result = await DataCleaner.roundValues(dataset: dataset, columnName: col, decimals: decimals)
+            case .normalize(let col):
+                result = await DataCleaner.normalizeValues(dataset: dataset, columnName: col)
+            case .standardize(let col):
+                result = await DataCleaner.standardizeValues(dataset: dataset, columnName: col)
+            case .removeOutliers(let col, let method):
+                result = await DataCleaner.removeOutliers(dataset: dataset, columnName: col, method: method)
+            case .standardizeDate(let col, let format):
+                result = await DataCleaner.standardizeDateFormat(dataset: dataset, columnName: col, outputFormat: format)
+            case .extractDateComponent(let col, let component, let newCol):
+                result = await DataCleaner.extractDateComponent(dataset: dataset, columnName: col, component: component, newColumnName: newCol)
+            }
+
+            await MainActor.run {
+                // Truncate forward history when branching
+                if historyIndex < cleaningHistory.count - 1 {
+                    cleaningHistory = Array(cleaningHistory.prefix(historyIndex + 1))
+                }
+                // Append new snapshot (cap at 10)
+                cleaningHistory.append(result)
+                if cleaningHistory.count > 10 {
+                    cleaningHistory.removeFirst()
+                }
+                historyIndex = cleaningHistory.count - 1
+
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    self.currentDataSet = result
+                    self.isLoading = false
+                }
+
+                // Set feedback message
+                if case .changeType = operation {
+                    if failCount > 0 {
+                        self.cleaningMessage = "⚠️ \(failCount) value(s) could not be converted and were set to empty."
+                    } else {
+                        self.cleaningMessage = "✓ All values converted successfully."
+                    }
+                } else {
+                    self.cleaningMessage = "✓ Applied: \(operation.label)"
+                }
+
+                self.applyFilterAndSort()
+            }
+        }
+    }
+
+    /// Reverts the dataset to the previous snapshot in the history stack
+    func undo() {
+        guard canUndo else { return }
+        historyIndex -= 1
+        withAnimation(.easeInOut(duration: 0.2)) {
+            currentDataSet = cleaningHistory[historyIndex]
+        }
+        applyFilterAndSort()
+    }
+
+    /// Re-applies the next snapshot in the history stack
+    func redo() {
+        guard canRedo else { return }
+        historyIndex += 1
+        withAnimation(.easeInOut(duration: 0.2)) {
+            currentDataSet = cleaningHistory[historyIndex]
+        }
+        applyFilterAndSort()
+    }
+
     // MARK: - Reset
 
     func reset() {
         withAnimation(.easeInOut(duration: 0.3)) {
-            currentDataSet   = nil
-            errorMessage     = nil
-            successMessage   = nil
-            isLoading        = false
-            isImportSuccess  = false
-            currentFileType  = .csv
-            availableSheets  = []
-            selectedSheet    = nil
-            sortColumn       = nil
-            sortAscending    = true
-            searchText       = ""
-            filteredRows     = []
-            displayStats     = [:]
-            currentExcelURL  = nil
+            currentDataSet    = nil
+            errorMessage      = nil
+            successMessage    = nil
+            isLoading         = false
+            isImportSuccess   = false
+            currentFileType   = .csv
+            availableSheets   = []
+            selectedSheet     = nil
+            sortColumn        = nil
+            sortAscending     = true
+            searchText        = ""
+            filteredRows      = []
+            displayStats      = [:]
+            currentExcelURL   = nil
+            cleaningHistory   = []
+            historyIndex      = -1
+            isCleaningPanelOpen = false
+            cleaningMessage   = nil
         }
     }
 

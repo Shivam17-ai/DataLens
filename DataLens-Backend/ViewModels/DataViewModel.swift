@@ -126,6 +126,10 @@ class DataViewModel: ObservableObject {
     @Published var isCleaningPanelOpen: Bool  = false
     @Published var cleaningMessage: String?   = nil
 
+    // MARK: Profile Cache State
+    @Published var cachedProfile: FullDataProfile? = nil
+    @Published var highlightedColumns: Set<String> = []
+
     /// True when there is a previous state to restore
     var canUndo: Bool { historyIndex > 0 }
     /// True when there is a later state to move forward to
@@ -246,6 +250,7 @@ class DataViewModel: ObservableObject {
                         self.currentDataSet = dataSet
                         self.successMessage = msg
                         self.isLoading = false
+                        self.cachedProfile = nil
                     }
                     self.applyFilterAndSort()
                 }
@@ -420,6 +425,7 @@ class DataViewModel: ObservableObject {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     self.currentDataSet = result
                     self.isLoading = false
+                    self.cachedProfile = nil
                 }
 
                 // Set feedback message
@@ -444,6 +450,7 @@ class DataViewModel: ObservableObject {
         historyIndex -= 1
         withAnimation(.easeInOut(duration: 0.2)) {
             currentDataSet = cleaningHistory[historyIndex]
+            cachedProfile = nil
         }
         applyFilterAndSort()
     }
@@ -454,6 +461,7 @@ class DataViewModel: ObservableObject {
         historyIndex += 1
         withAnimation(.easeInOut(duration: 0.2)) {
             currentDataSet = cleaningHistory[historyIndex]
+            cachedProfile = nil
         }
         applyFilterAndSort()
     }
@@ -480,6 +488,8 @@ class DataViewModel: ObservableObject {
             historyIndex      = -1
             isCleaningPanelOpen = false
             cleaningMessage   = nil
+            cachedProfile     = nil
+            highlightedColumns = []
         }
     }
 
@@ -515,6 +525,7 @@ class DataViewModel: ObservableObject {
             withAnimation(.easeInOut(duration: 0.3)) {
                 self.currentDataSet  = dataSet
                 self.isImportSuccess = false
+                self.cachedProfile = nil
             }
             self.applyFilterAndSort()
         }

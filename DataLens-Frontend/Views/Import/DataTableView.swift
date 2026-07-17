@@ -12,6 +12,8 @@ struct DataTableView: View {
     
     @State private var isReimportHovered = false
     @State private var isChartsHovered = false
+    @State private var isProfileOpen = false
+    @State private var isProfileHovered = false
     
     var body: some View {
         ZStack {
@@ -77,6 +79,29 @@ struct DataTableView: View {
                         )
                     }
                     .buttonStyle(.plain)
+
+                    // Profile Data Button
+                    Button(action: {
+                        isProfileOpen = true
+                    }) {
+                        HStack(spacing: 5) {
+                            Image(systemName: "chart.bar.doc.horizontal")
+                                .font(.system(size: 12, weight: .semibold))
+                            Text("Profile Data")
+                                .font(.system(size: 13, weight: .semibold))
+                        }
+                        .foregroundColor(AppColors.textPrimary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(isProfileHovered ? AppColors.accent : AppColors.accent.opacity(0.6))
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .onHover { hovering in
+                        withAnimation(.easeInOut(duration: 0.2)) { isProfileHovered = hovering }
+                    }
 
                     // Re-import Button
                     Button(action: { dataViewModel.reset() }) {
@@ -312,6 +337,10 @@ struct DataTableView: View {
                 .transition(.opacity.combined(with: .scale(scale: 0.95)))
             }
         }
+        .sheet(isPresented: $isProfileOpen) {
+            DataProfileView()
+                .environmentObject(dataViewModel)
+        }
     }
     
     private func formatDate(_ date: Date) -> String {
@@ -385,7 +414,7 @@ struct HeaderCell: View {
                 .frame(width: 160, alignment: .leading)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 12)
-                .background(AppColors.sidebar)
+                .background(dataViewModel.highlightedColumns.contains(col.name) ? AppColors.accent.opacity(0.2) : AppColors.sidebar)
                 .contentShape(Rectangle())
                 .onTapGesture {
                     withAnimation(.easeInOut(duration: 0.2)) {
@@ -405,6 +434,10 @@ struct HeaderCell: View {
                                             stats: dataViewModel.displayStats[col.name])
                                 .offset(y: 40)
                                 .zIndex(10)
+                        }
+                        if dataViewModel.highlightedColumns.contains(col.name) {
+                            Rectangle()
+                                .stroke(AppColors.success, lineWidth: 2)
                         }
                     },
                     alignment: .topLeading
@@ -553,6 +586,7 @@ struct StatRow: View {
 
 /// DataTableRowView aligns cells, handles background updates, row highlight, and overlays pinned items
 struct DataTableRowView: View {
+    @EnvironmentObject var dataViewModel: DataViewModel
     let rowIndex: Int
     let row: Row
     let columns: [Column]
@@ -574,7 +608,7 @@ struct DataTableRowView: View {
             
             // Scrollable cells
             ForEach(columns.dropFirst()) { col in
-                CellView(value: row.values[col.name], type: col.type, query: query, width: 160, bgColor: rowBgColor)
+                CellView(value: row.values[col.name], type: col.type, query: query, width: 160, bgColor: rowBgColor, isHighlighted: dataViewModel.highlightedColumns.contains(col.name))
             }
         }
         .contentShape(Rectangle())
@@ -595,7 +629,7 @@ struct DataTableRowView: View {
                     .background(rowBgColor)
                 
                 if let firstCol = columns.first {
-                    CellView(value: row.values[firstCol.name], type: firstCol.type, query: query, width: 160, bgColor: rowBgColor)
+                    CellView(value: row.values[firstCol.name], type: firstCol.type, query: query, width: 160, bgColor: rowBgColor, isHighlighted: dataViewModel.highlightedColumns.contains(firstCol.name))
                 }
             }
             .offset(x: -scrollOffset)
@@ -620,6 +654,7 @@ struct CellView: View {
     let query: String
     let width: CGFloat
     let bgColor: Color
+    var isHighlighted: Bool = false
     
     var body: some View {
         let displayVal = formatCellValue(value)
@@ -634,7 +669,15 @@ struct CellView: View {
         .frame(width: width)
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(bgColor)
+        .background(isHighlighted ? AppColors.accent.opacity(0.15) : bgColor)
+        .overlay(
+            Group {
+                if isHighlighted {
+                    Rectangle()
+                        .stroke(AppColors.success.opacity(0.6), lineWidth: 1.5)
+                }
+            }
+        )
     }
     
     private func formatCellValue(_ value: Any?) -> String {

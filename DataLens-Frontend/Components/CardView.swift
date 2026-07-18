@@ -1,12 +1,12 @@
 import SwiftUI
 
-/// Reusable styling container representing the premium metallic cards in DataLens
+/// Reusable styling container representing the premium metallic cards in DataLens.
+/// Implements 16pt padding, card style gradients, and hover lifts.
 struct CardView<Content: View>: View {
-    let padding: CGFloat
     let content: Content
+    @State private var isHovered = false
     
-    init(padding: CGFloat = 20, @ViewBuilder content: () -> Content) {
-        self.padding = padding
+    init(@ViewBuilder content: () -> Content) {
         self.content = content()
     }
     
@@ -14,15 +14,12 @@ struct CardView<Content: View>: View {
         VStack(alignment: .leading, spacing: 12) {
             content
         }
-        .padding(padding)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(AppColors.cards)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(AppColors.border, lineWidth: 1)
-        )
-        .shadow(color: Color.black.opacity(0.3), radius: 8, x: 0, y: 4)
+        .padding(16) // Always 16pt inner padding
+        .cardStyle(isHovered: isHovered)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: Constants.Animation.instant)) {
+                isHovered = hovering
+            }
+        }
     }
 }

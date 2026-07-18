@@ -4,7 +4,7 @@ import Combine
 // MARK: - Supporting Types
 
 /// The source file format of the most recently imported dataset
-enum FileType: String {
+enum FileType: String, Codable {
     case csv   = "CSV"
     case excel = "XLSX"
 
@@ -15,6 +15,16 @@ enum FileType: String {
         case .excel: return "tablecells.fill"
         }
     }
+}
+
+/// Represents an item in the user's recent file history.
+struct RecentFile: Identifiable, Codable, Equatable {
+    let id: UUID
+    let name: String
+    let fileType: FileType
+    let rowCount: Int
+    let importDate: Date
+    let fileURL: URL
 }
 
 /// Statistics structure representing aggregated metrics for a column in the dataset
@@ -130,6 +140,9 @@ class DataViewModel: ObservableObject {
     @Published var cachedProfile: FullDataProfile? = nil
     @Published var highlightedColumns: Set<String> = []
 
+    // MARK: Recent Files
+    @Published var recentFiles: [RecentFile] = []
+
     /// True when there is a previous state to restore
     var canUndo: Bool { historyIndex > 0 }
     /// True when there is a later state to move forward to
@@ -145,11 +158,33 @@ class DataViewModel: ObservableObject {
     // MARK: Private
     private var cancellables       = Set<AnyCancellable>()
     private var currentExcelURL: URL? = nil   // retained for sheet switching
+    private var currentCSVURL: URL?   = nil   // retained for recent file tracking
 
     // MARK: - Init
 
     init() {
         setupSearchDebounce()
+        loadRecentFiles()
+    }
+
+    /// Adds a successfully imported file to the recent files list (max 5 entries, persisted to UserDefaults).
+    func addRecentFile(_ file: RecentFile) {
+        // Remove duplicates by URL
+        recentFiles.removeAll { $0.fileURL == file.fileURL }
+        recentFiles.insert(file, at: 0)
+        if recentFiles.count > 5 { recentFiles = Array(recentFiles.prefix(5)) }
+        saveRecentFiles()
+    }
+
+    private func loadRecentFiles() {
+        guard let data = UserDefaults.standard.data(forKey: "recentFiles"),
+              let decoded = try? JSONDecoder().decode([RecentFile].self, from: data) else { return }
+        recentFiles = decoded
+    }
+
+    private func saveRecentFiles() {
+        guard let data = try? JSONEncoder().encode(recentFiles) else { return }
+        UserDefaults.standard.set(data, forKey: "recentFiles")
     }
 
     /// Subscribes to searchText changes and triggers filter/sort after 300 ms of inactivity
@@ -186,6 +221,7 @@ class DataViewModel: ObservableObject {
         }
 
         beginLoading(fileType: .csv)
+        currentCSVURL = url // store for recent file tracking
 
         Task {
             do {
@@ -528,6 +564,17 @@ class DataViewModel: ObservableObject {
                 self.cachedProfile = nil
             }
             self.applyFilterAndSort()
+            // Record in recent files history
+            let fileURL = (fileType == .csv ? self.currentCSVURL : self.currentExcelURL) ?? URL(fileURLWithPath: dataSet.name)
+            let recent = RecentFile(
+                id: UUID(),
+                name: dataSet.name,
+                fileType: fileType,
+                rowCount: dataSet.rowCount,
+                importDate: Date(),
+                fileURL: fileURL
+            )
+            self.addRecentFile(recent)
         }
     }
 

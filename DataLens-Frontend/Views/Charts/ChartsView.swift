@@ -1,0 +1,321 @@
+import SwiftUI
+
+/// ChartsView represents the main workspace for data visualization.
+/// It features a sidebar for selecting chart types, and a main canvas area
+/// with toolbar selectors (X/Y axes, title, theme, auto-sort) and the active chart.
+struct ChartsView: View {
+    @EnvironmentObject var dataViewModel: DataViewModel
+    @EnvironmentObject var toastManager: ToastManager
+    @ObservedObject var navigationViewModel: NavigationViewModel
+    
+    @StateObject private var chartViewModel: ChartViewModel
+    @State private var highlightedSeries: Set<String> = []
+    
+    init(navigationViewModel: NavigationViewModel, dataViewModel: DataViewModel) {
+        self.navigationViewModel = navigationViewModel
+        self._chartViewModel = StateObject(wrappedValue: ChartViewModel(dataViewModel: dataViewModel))
+    }
+    
+    var body: some View {
+        HStack(spacing: 0) {
+            
+            // MARK: - Left Panel: Chart Selector (240pt)
+            VStack(alignment: .leading, spacing: 0) {
+                Text("Chart Library")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(ColorPalette.textPrimary)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 16)
+                    .padding(.bottom, 12)
+                
+                Divider()
+                    .background(ColorPalette.border)
+                    
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
+                        ChartTypeSection(
+                            title: "Basic Charts",
+                            types: [.bar, .horizontalBar, .line, .area, .pie, .donut],
+                            selectedType: $chartViewModel.chartConfig.chartType
+                        )
+                        
+                        ChartTypeSection(
+                            title: "Statistical Charts",
+                            types: [.scatter, .bubble, .histogram, .boxPlot],
+                            selectedType: $chartViewModel.chartConfig.chartType
+                        )
+                        
+                        ChartTypeSection(
+                            title: "Advanced Charts",
+                            types: [.heatmap, .treemap, .waterfall, .funnel, .gauge],
+                            selectedType: $chartViewModel.chartConfig.chartType
+                        )
+                    }
+                    .padding(16)
+                }
+            }
+            .frame(width: 240)
+            .background(ColorPalette.sidebar)
+            .overlay(
+                Rectangle()
+                    .fill(ColorPalette.border)
+                    .frame(width: 1),
+                alignment: .trailing
+            )
+            
+            // MARK: - Right Panel: Toolbar and Canvas
+            VStack(spacing: 0) {
+                // Toolbar
+                ChartsToolbar(chartViewModel: chartViewModel)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 14)
+                    .background(ColorPalette.sidebar.opacity(0.6))
+                    .overlay(
+                        VStack { Spacer(); Rectangle().fill(ColorPalette.border).frame(height: 1) }
+                    )
+                
+                // Canvas Area
+                ZStack {
+                    ColorPalette.background
+                        .edgesIgnoringSafeArea(.all)
+                    
+                    if dataViewModel.currentDataSet == nil {
+                        EmptyStateView(
+                            iconName: "square.and.arrow.down",
+                            title: Constants.EmptyStates.noDataTitle,
+                            subtitle: Constants.EmptyStates.noDataSubtitle,
+                            actionButtonTitle: "Import Data",
+                            action: {
+                                withAnimation {
+                                    navigationViewModel.navigate(to: .importData)
+                                }
+                            }
+                        )
+                    } else {
+                        // Interactive Chart Container
+                        ChartContainer(
+                            title: chartViewModel.chartConfig.title,
+                            config: chartViewModel.chartConfig,
+                            seriesList: chartViewModel.chartData.seriesNames,
+                            colors: chartViewModel.chartConfig.colorTheme.colors,
+                            isEmpty: chartViewModel.chartData.isEmpty,
+                            isLoading: chartViewModel.isLoading,
+                            highlightedSeries: $highlightedSeries,
+                            onExport: {
+                                chartViewModel.exportChart(view: currentChartView)
+                            }
+                        ) {
+                            currentChartView
+                        }
+                        .padding(16)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onAppear {
+            // Bind the view model's toast notifier to our shared toast manager
+            chartViewModel.onShowToast = { msg, type in
+                toastManager.show(message: msg, type: type)
+            }
+            
+            // Run aggregation if dataset is already loaded
+            if let dataset = dataViewModel.currentDataSet {
+                chartViewModel.prepareChartData(dataset: dataset, config: chartViewModel.chartConfig)
+            }
+        }
+        .onChange(of: chartViewModel.chartConfig.chartType) { newType in
+            // Keep selected chart type state updated in sync with config changes
+            chartViewModel.selectedChartType = newType
+            if let dataset = dataViewModel.currentDataSet {
+                chartViewModel.prepareChartData(dataset: dataset, config: chartViewModel.chartConfig)
+            }
+        }
+    }
+    
+    // MARK: - Current Chart Dispatcher View
+    
+    @ViewBuilder
+    private var currentChartView: some View {
+        switch chartViewModel.chartConfig.chartType {
+        case .bar:
+            BarChartView(
+                config: chartViewModel.chartConfig,
+                data: chartViewModel.chartData,
+                colors: chartViewModel.chartConfig.colorTheme.colors,
+                highlightedSeries: highlightedSeries
+            )
+        case .horizontalBar:
+            HorizontalBarChartView(
+                config: chartViewModel.chartConfig,
+                data: chartViewModel.chartData,
+                colors: chartViewModel.chartConfig.colorTheme.colors,
+                highlightedSeries: highlightedSeries
+            )
+        default:
+            EmptyStateView(
+                iconName: chartViewModel.chartConfig.chartType.iconName,
+                title: "\(chartViewModel.chartConfig.chartType.rawValue) Chart",
+                subtitle: "Visualization layout is coming soon. Please test with the Bar or Horizontal Bar chart options."
+            )
+        }
+    }
+}
+
+// MARK: - Chart Selector Section Group
+
+struct ChartTypeSection: View {
+    let title: String
+    let types: [ChartType]
+    @Binding var selectedType: ChartType
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(ColorPalette.textSecondary)
+                .padding(.leading, 4)
+            
+            VStack(spacing: 4) {
+                ForEach(types) { type in
+                    Button(action: {
+                        withAnimation(.easeInOut(duration: Constants.Animation.instant)) {
+                            selectedType = type
+                        }
+                    }) {
+                        HStack(spacing: 10) {
+                            Image(systemName: type.iconName)
+                                .font(.system(size: 12))
+                                .frame(width: 16)
+                            Text(type.rawValue)
+                                .font(.system(size: 13, weight: .semibold))
+                            Spacer()
+                        }
+                        .foregroundColor(selectedType == type ? .white : ColorPalette.textSecondary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(selectedType == type ? ColorPalette.accent : Color.clear)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Charts Toolbar Configurator
+
+struct ChartsToolbar: View {
+    @ObservedObject var chartViewModel: ChartViewModel
+    @EnvironmentObject var dataViewModel: DataViewModel
+    
+    var body: some View {
+        let columns = dataViewModel.currentDataSet?.visibleColumns ?? []
+        
+        HStack(spacing: 16) {
+            // Chart Title Input
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Chart Title")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(ColorPalette.textSecondary)
+                TextField("Untitled Chart", text: $chartViewModel.chartConfig.title)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12, weight: .semibold))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(ColorPalette.cards)
+                    .cornerRadius(6)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 6)
+                            .stroke(ColorPalette.border, lineWidth: 1)
+                    )
+                    .frame(width: 200)
+            }
+            
+            // X-Axis Selector
+            VStack(alignment: .leading, spacing: 4) {
+                Text("X-Axis (Categories)")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(ColorPalette.textSecondary)
+                
+                Picker("", selection: $chartViewModel.chartConfig.xAxisColumn) {
+                    Text("Select Column").tag(String?.none)
+                    ForEach(columns) { col in
+                        Text(col.name).tag(String?.some(col.name))
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .frame(width: 140)
+            }
+            
+            // Y-Axis Selector
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Y-Axis (Numeric Values)")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(ColorPalette.textSecondary)
+                
+                Picker("", selection: $chartViewModel.chartConfig.yAxisColumn) {
+                    Text("Select Column").tag(String?.none)
+                    ForEach(columns) { col in
+                        Text(col.name).tag(String?.some(col.name))
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .frame(width: 140)
+            }
+            
+            // Color Theme Picker
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Color Theme")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundColor(ColorPalette.textSecondary)
+                
+                Picker("", selection: $chartViewModel.chartConfig.colorTheme) {
+                    ForEach(ColorTheme.allCases) { theme in
+                        Text(theme.rawValue).tag(theme)
+                    }
+                }
+                .pickerStyle(.menu)
+                .labelsHidden()
+                .frame(width: 120)
+            }
+            
+            // Auto Sort Option (Only useful for horizontal bar / bar lists)
+            if chartViewModel.chartConfig.chartType == .horizontalBar {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Sorting")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(ColorPalette.textSecondary)
+                    
+                    Toggle("Rank Descending", isOn: $chartViewModel.chartConfig.autoSort)
+                        .toggleStyle(.checkbox)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(ColorPalette.textPrimary)
+                        .padding(.vertical, 4)
+                }
+            }
+            
+            Spacer()
+        }
+        .onChange(of: chartViewModel.chartConfig.xAxisColumn) { _ in
+            if let dataset = dataViewModel.currentDataSet {
+                chartViewModel.prepareChartData(dataset: dataset, config: chartViewModel.chartConfig)
+            }
+        }
+        .onChange(of: chartViewModel.chartConfig.yAxisColumn) { _ in
+            if let dataset = dataViewModel.currentDataSet {
+                chartViewModel.prepareChartData(dataset: dataset, config: chartViewModel.chartConfig)
+            }
+        }
+        .onChange(of: chartViewModel.chartConfig.colorTheme) { _ in
+            if let dataset = dataViewModel.currentDataSet {
+                chartViewModel.prepareChartData(dataset: dataset, config: chartViewModel.chartConfig)
+            }
+        }
+    }
+}

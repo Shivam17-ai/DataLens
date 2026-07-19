@@ -2,6 +2,7 @@ import SwiftUI
 
 /// ContentView defines the main NavigationSplitView layout of the DataLens application
 struct ContentView: View {
+    @EnvironmentObject var dataViewModel: DataViewModel
     @StateObject private var navigationViewModel = NavigationViewModel()
     
     @AppStorage("hasCompletedOnboarding") var hasCompletedOnboarding: Bool = false
@@ -21,7 +22,7 @@ struct ContentView: View {
                     case .dashboard:
                         PlaceholderDetailView(title: AppConstants.Sidebar.dashboard)
                     case .charts:
-                        PlaceholderDetailView(title: AppConstants.Sidebar.charts)
+                        ChartsView(navigationViewModel: navigationViewModel, dataViewModel: dataViewModel)
                     case .aiInsights:
                         PlaceholderDetailView(title: AppConstants.Sidebar.aiInsights)
                     case .export:

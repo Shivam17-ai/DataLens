@@ -152,11 +152,27 @@ struct ChartsView: View {
                 colors: chartViewModel.chartConfig.colorTheme.colors,
                 highlightedSeries: highlightedSeries
             )
+        case .line:
+            LineChartView(
+                config: chartViewModel.chartConfig,
+                data: chartViewModel.chartData,
+                colors: chartViewModel.chartConfig.colorTheme.colors,
+                highlightedSeries: highlightedSeries,
+                chartViewModel: chartViewModel
+            )
+        case .area:
+            AreaChartView(
+                config: chartViewModel.chartConfig,
+                data: chartViewModel.chartData,
+                colors: chartViewModel.chartConfig.colorTheme.colors,
+                highlightedSeries: highlightedSeries,
+                chartViewModel: chartViewModel
+            )
         default:
             EmptyStateView(
                 iconName: chartViewModel.chartConfig.chartType.iconName,
                 title: "\(chartViewModel.chartConfig.chartType.rawValue) Chart",
-                subtitle: "Visualization layout is coming soon. Please test with the Bar or Horizontal Bar chart options."
+                subtitle: "Visualization layout is coming soon. Test with Bar, Horizontal Bar, Line, or Area chart options."
             )
         }
     }
@@ -212,110 +228,183 @@ struct ChartsToolbar: View {
     @ObservedObject var chartViewModel: ChartViewModel
     @EnvironmentObject var dataViewModel: DataViewModel
     
+    private var isLineOrArea: Bool {
+        chartViewModel.chartConfig.chartType == .line || chartViewModel.chartConfig.chartType == .area
+    }
+    
     var body: some View {
         let columns = dataViewModel.currentDataSet?.visibleColumns ?? []
         
-        HStack(spacing: 16) {
-            // Chart Title Input
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Chart Title")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundColor(ColorPalette.textSecondary)
-                TextField("Untitled Chart", text: $chartViewModel.chartConfig.title)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 12, weight: .semibold))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(ColorPalette.cards)
-                    .cornerRadius(6)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(ColorPalette.border, lineWidth: 1)
-                    )
-                    .frame(width: 200)
-            }
-            
-            // X-Axis Selector
-            VStack(alignment: .leading, spacing: 4) {
-                Text("X-Axis (Categories)")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundColor(ColorPalette.textSecondary)
-                
-                Picker("", selection: $chartViewModel.chartConfig.xAxisColumn) {
-                    Text("Select Column").tag(String?.none)
-                    ForEach(columns) { col in
-                        Text(col.name).tag(String?.some(col.name))
-                    }
-                }
-                .pickerStyle(.menu)
-                .labelsHidden()
-                .frame(width: 140)
-            }
-            
-            // Y-Axis Selector
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Y-Axis (Numeric Values)")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundColor(ColorPalette.textSecondary)
-                
-                Picker("", selection: $chartViewModel.chartConfig.yAxisColumn) {
-                    Text("Select Column").tag(String?.none)
-                    ForEach(columns) { col in
-                        Text(col.name).tag(String?.some(col.name))
-                    }
-                }
-                .pickerStyle(.menu)
-                .labelsHidden()
-                .frame(width: 140)
-            }
-            
-            // Color Theme Picker
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Color Theme")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundColor(ColorPalette.textSecondary)
-                
-                Picker("", selection: $chartViewModel.chartConfig.colorTheme) {
-                    ForEach(ColorTheme.allCases) { theme in
-                        Text(theme.rawValue).tag(theme)
-                    }
-                }
-                .pickerStyle(.menu)
-                .labelsHidden()
-                .frame(width: 120)
-            }
-            
-            // Auto Sort Option (Only useful for horizontal bar / bar lists)
-            if chartViewModel.chartConfig.chartType == .horizontalBar {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Sorting")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundColor(ColorPalette.textSecondary)
-                    
-                    Toggle("Rank Descending", isOn: $chartViewModel.chartConfig.autoSort)
-                        .toggleStyle(.checkbox)
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 16) {
+                // Chart Title Input
+                ToolbarField(label: "Chart Title") {
+                    TextField("Untitled Chart", text: $chartViewModel.chartConfig.title)
+                        .textFieldStyle(.plain)
                         .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(ColorPalette.textPrimary)
-                        .padding(.vertical, 4)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(ColorPalette.cards)
+                        .cornerRadius(6)
+                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(ColorPalette.border, lineWidth: 1))
+                        .frame(width: 180)
                 }
+                
+                ToolbarDivider()
+                
+                // X-Axis Selector
+                ToolbarField(label: "X-Axis") {
+                    Picker("", selection: $chartViewModel.chartConfig.xAxisColumn) {
+                        Text("Select Column").tag(String?.none)
+                        ForEach(columns) { col in
+                            Text(col.name).tag(String?.some(col.name))
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .frame(width: 130)
+                }
+                
+                // Y-Axis Selector
+                ToolbarField(label: "Y-Axis (Numeric)") {
+                    Picker("", selection: $chartViewModel.chartConfig.yAxisColumn) {
+                        Text("Select Column").tag(String?.none)
+                        ForEach(columns) { col in
+                            Text(col.name).tag(String?.some(col.name))
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .frame(width: 130)
+                }
+                
+                // Color Theme Picker
+                ToolbarField(label: "Theme") {
+                    Picker("", selection: $chartViewModel.chartConfig.colorTheme) {
+                        ForEach(ColorTheme.allCases) { theme in
+                            Text(theme.rawValue).tag(theme)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .labelsHidden()
+                    .frame(width: 110)
+                }
+                
+                ToolbarDivider()
+                
+                // ── Line / Area only controls ──────────────────────────
+                if isLineOrArea {
+                    // Interpolation mode toggle
+                    ToolbarField(label: "Line Style") {
+                        Picker("", selection: $chartViewModel.chartConfig.interpolationMode) {
+                            ForEach(LineInterpolation.allCases) { mode in
+                                Text(mode.rawValue).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 130)
+                    }
+                    
+                    // Series grouping column (multi-series breakdown)
+                    ToolbarField(label: "Group By") {
+                        Picker("", selection: $chartViewModel.chartConfig.seriesColumn) {
+                            Text("None").tag(String?.none)
+                            ForEach(columns) { col in
+                                Text(col.name).tag(String?.some(col.name))
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .frame(width: 120)
+                    }
+                    
+                    // Reference lines toggle
+                    ToolbarField(label: "Ref. Lines") {
+                        Toggle("", isOn: $chartViewModel.chartConfig.showReferenceLines)
+                            .toggleStyle(.checkbox)
+                            .labelsHidden()
+                    }
+                }
+                
+                // ── Area-only controls ─────────────────────────────────
+                if chartViewModel.chartConfig.chartType == .area {
+                    ToolbarDivider()
+                    
+                    ToolbarField(label: "Stack Mode") {
+                        Picker("", selection: $chartViewModel.chartConfig.stackMode) {
+                            ForEach(AreaStackMode.allCases) { mode in
+                                Text(mode.rawValue).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .frame(width: 120)
+                    }
+                    
+                    ToolbarField(label: "Baseline") {
+                        Picker("", selection: $chartViewModel.chartConfig.baselineMode) {
+                            ForEach(AreaBaseline.allCases) { mode in
+                                Text(mode.rawValue).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .frame(width: 130)
+                    }
+                }
+                
+                // ── Bar / Horizontal Bar only controls ─────────────────
+                if chartViewModel.chartConfig.chartType == .horizontalBar {
+                    ToolbarField(label: "Sorting") {
+                        Toggle("Rank ↓", isOn: $chartViewModel.chartConfig.autoSort)
+                            .toggleStyle(.checkbox)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(ColorPalette.textPrimary)
+                    }
+                }
+                
+                Spacer(minLength: 8)
             }
-            
-            Spacer()
+            .padding(.horizontal, 4)
         }
-        .onChange(of: chartViewModel.chartConfig.xAxisColumn) { _ in
-            if let dataset = dataViewModel.currentDataSet {
-                chartViewModel.prepareChartData(dataset: dataset, config: chartViewModel.chartConfig)
-            }
+        // Trigger re-aggregation on any axis / config change
+        .onChange(of: chartViewModel.chartConfig.xAxisColumn) { _ in recompute() }
+        .onChange(of: chartViewModel.chartConfig.yAxisColumn) { _ in recompute() }
+        .onChange(of: chartViewModel.chartConfig.seriesColumn) { _ in recompute() }
+        .onChange(of: chartViewModel.chartConfig.colorTheme)  { _ in recompute() }
+        .onChange(of: chartViewModel.chartConfig.stackMode)   { _ in recompute() }
+    }
+    
+    private func recompute() {
+        if let dataset = dataViewModel.currentDataSet {
+            chartViewModel.prepareChartData(dataset: dataset, config: chartViewModel.chartConfig)
         }
-        .onChange(of: chartViewModel.chartConfig.yAxisColumn) { _ in
-            if let dataset = dataViewModel.currentDataSet {
-                chartViewModel.prepareChartData(dataset: dataset, config: chartViewModel.chartConfig)
-            }
+    }
+}
+
+// MARK: - Toolbar Field Helper
+
+/// Small labelled column used inside ChartsToolbar.
+private struct ToolbarField<Content: View>: View {
+    let label: String
+    @ViewBuilder let content: () -> Content
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.system(size: 10, weight: .bold))
+                .foregroundColor(ColorPalette.textSecondary)
+            content()
         }
-        .onChange(of: chartViewModel.chartConfig.colorTheme) { _ in
-            if let dataset = dataViewModel.currentDataSet {
-                chartViewModel.prepareChartData(dataset: dataset, config: chartViewModel.chartConfig)
-            }
-        }
+    }
+}
+
+/// Thin vertical separator between toolbar groups.
+private struct ToolbarDivider: View {
+    var body: some View {
+        Rectangle()
+            .fill(ColorPalette.border)
+            .frame(width: 1, height: 36)
+            .opacity(0.6)
     }
 }

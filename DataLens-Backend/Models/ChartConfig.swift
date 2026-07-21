@@ -130,6 +130,28 @@ enum AreaStackMode: String, CaseIterable, Identifiable, Codable {
     var id: String { rawValue }
 }
 
+// MARK: - Donut Center Content Options
+
+enum DonutCenterContent: String, CaseIterable, Identifiable, Codable {
+    case totalValue = "Total Value"
+    case totalCount = "Total Count"
+    case percentage = "Percentage"
+    case customText = "Custom Text"
+    
+    var id: String { rawValue }
+}
+
+// MARK: - Slice Sort Order
+
+enum SliceSortOrder: String, CaseIterable, Identifiable, Codable {
+    case descending = "Value Descending"
+    case ascending = "Value Ascending"
+    case alphabetical = "Alphabetical"
+    case original = "Original Order"
+    
+    var id: String { rawValue }
+}
+
 // MARK: - Chart Annotation Model
 
 struct ChartAnnotation: Identifiable, Codable, Equatable {
@@ -174,6 +196,19 @@ struct ChartConfig: Identifiable, Codable, Equatable {
     var baselineMode: AreaBaseline = .zero
     var customBaselineValue: Double = 0
     var stackMode: AreaStackMode = .none
+    
+    // MARK: Pie / Donut chart specific settings
+    var maxSlices: Int = 12
+    var groupSmallSlices: Bool = true
+    var smallSliceThreshold: Double = 0.02
+    var explodeAll: Bool = false
+    var semiCircleMode: Bool = false
+    var donutCenterText: DonutCenterContent = .totalValue
+    var customCenterText: String = ""
+    var showLeaderLines: Bool = true
+    var pieStartAngle: Double = -90.0
+    var comparisonColumn: String? = nil
+    var sliceSortOrder: SliceSortOrder = .descending
     
     // MARK: Persistent annotations
     var annotations: [ChartAnnotation] = []

@@ -3,12 +3,13 @@ import Combine
 import AppKit
 
 /// ChartViewModel manages chart configurations, color theme options,
-/// background aggregations, annotation CRUD, and PNG image exporting.
+/// background aggregations, annotation CRUD, slice selection, and PNG image exporting.
 class ChartViewModel: ObservableObject {
     @Published var selectedChartType: ChartType = .bar
     @Published var chartConfig: ChartConfig
     @Published var chartData: ChartData = ChartData()
     @Published var annotations: [ChartAnnotation] = []
+    @Published var selectedSlice: ChartDataPoint? = nil
     @Published var isLoading: Bool = false
     
     // Shared toast trigger callback (can be assigned by view layers)
@@ -56,6 +57,7 @@ class ChartViewModel: ObservableObject {
             self.chartConfig.yAxisColumn = nil
             self.chartConfig.seriesColumn = nil
             self.annotations = []
+            self.selectedSlice = nil
             return
         }
         
@@ -79,7 +81,6 @@ class ChartViewModel: ObservableObject {
     func updateConfig(_ config: ChartConfig) {
         self.chartConfig = config
         self.selectedChartType = config.chartType
-        // Sync annotations from config
         self.annotations = config.annotations
         if let dataset = dataViewModel.currentDataSet {
             prepareChartData(dataset: dataset, config: config)
@@ -99,6 +100,18 @@ class ChartViewModel: ObservableObject {
             }
         case .area:
             let data = prepareAreaData(dataset: dataset, config: config)
+            DispatchQueue.main.async { [weak self] in
+                self?.chartData = data
+                self?.isLoading = false
+            }
+        case .pie:
+            let data = preparePieData(dataset: dataset, config: config)
+            DispatchQueue.main.async { [weak self] in
+                self?.chartData = data
+                self?.isLoading = false
+            }
+        case .donut:
+            let data = prepareDonutData(dataset: dataset, config: config)
             DispatchQueue.main.async { [weak self] in
                 self?.chartData = data
                 self?.isLoading = false
@@ -144,20 +157,17 @@ class ChartViewModel: ObservableObject {
         }
     }
     
-    /// Prepares multi-series line data: each unique value in seriesColumn
-    /// becomes its own series. If no series column is set, a single series is produced.
+    /// Prepares multi-series line data.
     func prepareLineData(dataset: DataSet, config: ChartConfig) -> ChartData {
         guard let xAxis = config.xAxisColumn, let yAxis = config.yAxisColumn else {
             return ChartData()
         }
         
         isLoading = true
-        
         var points: [ChartDataPoint] = []
         
         if let seriesCol = config.seriesColumn, !seriesCol.isEmpty {
-            // Multi-series: group by (seriesCol, xAxis) and sum yAxis
-            var grouped: [String: [String: Double]] = [:] // [seriesVal: [xVal: yVal]]
+            var grouped: [String: [String: Double]] = [:]
             
             for row in dataset.rows {
                 let xVal = extractXLabel(row: row, column: xAxis)
@@ -166,7 +176,6 @@ class ChartViewModel: ObservableObject {
                 grouped[seriesVal, default: [:]][xVal, default: 0.0] += yVal
             }
             
-            // Collect all unique X labels, sorted
             let allXLabels = Array(Set(dataset.rows.map { extractXLabel(row: $0, column: xAxis) })).sorted()
             
             for (seriesName, xMap) in grouped {
@@ -175,7 +184,6 @@ class ChartViewModel: ObservableObject {
                 }
             }
         } else {
-            // Single series: aggregate by xAxis, sum y
             var grouped: [String: Double] = [:]
             for row in dataset.rows {
                 let xVal = extractXLabel(row: row, column: xAxis)
@@ -192,11 +200,87 @@ class ChartViewModel: ObservableObject {
         return ChartData(points: points)
     }
     
-    /// Prepares area chart data — same aggregation as line data.
-    /// Stacking normalization (100%) is handled at the view layer since
-    /// it requires knowing the full Y-per-X across all series.
+    /// Prepares area chart data.
     func prepareAreaData(dataset: DataSet, config: ChartConfig) -> ChartData {
         return prepareLineData(dataset: dataset, config: config)
+    }
+    
+    // MARK: - Pie & Donut Chart Processing
+    
+    /// Prepares data for Pie Charts, applying limits and grouping small slices into "Other".
+    func preparePieData(dataset: DataSet, config: ChartConfig) -> ChartData {
+        guard let xAxis = config.xAxisColumn, let yAxis = config.yAxisColumn else {
+            return ChartData()
+        }
+        
+        isLoading = true
+        
+        // Step 1: Initial grouping
+        var rawGrouped: [String: Double] = [:]
+        var originalOrder: [String] = []
+        
+        for row in dataset.rows {
+            let xVal = extractXLabel(row: row, column: xAxis)
+            let yVal = extractYValue(row: row, column: yAxis)
+            if rawGrouped[xVal] == nil {
+                originalOrder.append(xVal)
+            }
+            rawGrouped[xVal, default: 0.0] += yVal
+        }
+        
+        // Remove empty or zero/negative slices to avoid visualization noise
+        let nonZeroGrouped = rawGrouped.filter { $0.value > 0 }
+        let totalSum = nonZeroGrouped.values.reduce(0.0, +)
+        guard totalSum > 0 else { return ChartData() }
+        
+        // Step 2: Identify slices to keep vs group into "Other"
+        // Sort descending to find top contributors
+        let sortedByValue = nonZeroGrouped.sorted { $0.value > $1.value }
+        
+        var keptSlices: [ChartDataPoint] = []
+        var otherSum = 0.0
+        
+        for (index, item) in sortedByValue.enumerated() {
+            let pct = item.value / totalSum
+            let exceedsThreshold = !config.groupSmallSlices || pct >= config.smallSliceThreshold
+            let withinMaxLimit = keptSlices.count < (config.maxSlices - 1)
+            
+            if exceedsThreshold && withinMaxLimit {
+                keptSlices.append(ChartDataPoint(x: item.key, y: item.value, series: item.key))
+            } else {
+                otherSum += item.value
+            }
+        }
+        
+        // Step 3: Sort kept slices according to requested SliceSortOrder
+        switch config.sliceSortOrder {
+        case .descending:
+            keptSlices.sort { $0.y > $1.y }
+        case .ascending:
+            keptSlices.sort { $0.y < $1.y }
+        case .alphabetical:
+            keptSlices.sort { $0.x.localizedCaseInsensitiveCompare($1.x) == .orderedAscending }
+        case .original:
+            // Find relative indices in originalOrder
+            let orderDict = Dictionary(uniqueKeysWithValues: originalOrder.enumerated().map { ($0.element, $0.offset) })
+            keptSlices.sort {
+                let idxA = orderDict[$0.x] ?? Int.max
+                let idxB = orderDict[$1.x] ?? Int.max
+                return idxA < idxB
+            }
+        }
+        
+        // Step 4: Add "Other" category at the end if it contains values
+        if otherSum > 0 {
+            keptSlices.append(ChartDataPoint(x: "Other", y: otherSum, series: "Other"))
+        }
+        
+        return ChartData(points: keptSlices)
+    }
+    
+    /// Prepares data for Donut Charts — identical slice grouping logic to Pie Chart.
+    func prepareDonutData(dataset: DataSet, config: ChartConfig) -> ChartData {
+        return preparePieData(dataset: dataset, config: config)
     }
     
     // MARK: - Annotation CRUD

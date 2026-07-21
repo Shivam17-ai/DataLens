@@ -168,11 +168,27 @@ struct ChartsView: View {
                 highlightedSeries: highlightedSeries,
                 chartViewModel: chartViewModel
             )
+        case .pie:
+            PieChartView(
+                config: chartViewModel.chartConfig,
+                data: chartViewModel.chartData,
+                colors: chartViewModel.chartConfig.colorTheme.colors,
+                highlightedSeries: highlightedSeries,
+                chartViewModel: chartViewModel
+            )
+        case .donut:
+            DonutChartView(
+                config: chartViewModel.chartConfig,
+                data: chartViewModel.chartData,
+                colors: chartViewModel.chartConfig.colorTheme.colors,
+                highlightedSeries: highlightedSeries,
+                chartViewModel: chartViewModel
+            )
         default:
             EmptyStateView(
                 iconName: chartViewModel.chartConfig.chartType.iconName,
                 title: "\(chartViewModel.chartConfig.chartType.rawValue) Chart",
-                subtitle: "Visualization layout is coming soon. Test with Bar, Horizontal Bar, Line, or Area chart options."
+                subtitle: "Visualization layout is coming soon. Test with Bar, Horizontal Bar, Line, Area, Pie, or Donut chart options."
             )
         }
     }
@@ -232,6 +248,10 @@ struct ChartsToolbar: View {
         chartViewModel.chartConfig.chartType == .line || chartViewModel.chartConfig.chartType == .area
     }
     
+    private var isPieOrDonut: Bool {
+        chartViewModel.chartConfig.chartType == .pie || chartViewModel.chartConfig.chartType == .donut
+    }
+    
     var body: some View {
         let columns = dataViewModel.currentDataSet?.visibleColumns ?? []
         
@@ -247,13 +267,13 @@ struct ChartsToolbar: View {
                         .background(ColorPalette.cards)
                         .cornerRadius(6)
                         .overlay(RoundedRectangle(cornerRadius: 6).stroke(ColorPalette.border, lineWidth: 1))
-                        .frame(width: 180)
+                        .frame(width: 160)
                 }
                 
                 ToolbarDivider()
                 
                 // X-Axis Selector
-                ToolbarField(label: "X-Axis") {
+                ToolbarField(label: "X-Axis (Categories)") {
                     Picker("", selection: $chartViewModel.chartConfig.xAxisColumn) {
                         Text("Select Column").tag(String?.none)
                         ForEach(columns) { col in
@@ -353,6 +373,85 @@ struct ChartsToolbar: View {
                     }
                 }
                 
+                // ── Pie / Donut only controls ──────────────────────────
+                if isPieOrDonut {
+                    // Sort order configuration
+                    ToolbarField(label: "Sort Slices") {
+                        Picker("", selection: $chartViewModel.chartConfig.sliceSortOrder) {
+                            ForEach(SliceSortOrder.allCases) { order in
+                                Text(order.rawValue).tag(order)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .frame(width: 140)
+                    }
+                    
+                    // Max slices constraint
+                    ToolbarField(label: "Max Slices") {
+                        Picker("", selection: $chartViewModel.chartConfig.maxSlices) {
+                            ForEach([5, 8, 12, 16, 20, 24], id: \.self) { num in
+                                Text("\(num)").tag(num)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .frame(width: 60)
+                    }
+                    
+                    // Filter small slices (<2%)
+                    ToolbarField(label: "Group Small (<2%)") {
+                        Toggle("", isOn: $chartViewModel.chartConfig.groupSmallSlices)
+                            .toggleStyle(.checkbox)
+                            .labelsHidden()
+                    }
+                    
+                    // Explode all slices
+                    ToolbarField(label: "Explode All") {
+                        Toggle("", isOn: $chartViewModel.chartConfig.explodeAll)
+                            .toggleStyle(.checkbox)
+                            .labelsHidden()
+                    }
+                    
+                    // Semi Circle mode
+                    ToolbarField(label: "Semi-Circle") {
+                        Toggle("", isOn: $chartViewModel.chartConfig.semiCircleMode)
+                            .toggleStyle(.checkbox)
+                            .labelsHidden()
+                    }
+                    
+                    ToolbarDivider()
+                    
+                    // Comparison Column Selection
+                    ToolbarField(label: "Compare With") {
+                        Picker("", selection: $chartViewModel.chartConfig.comparisonColumn) {
+                            Text("None").tag(String?.none)
+                            ForEach(columns) { col in
+                                Text(col.name).tag(String?.some(col.name))
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .frame(width: 120)
+                    }
+                }
+                
+                // ── Donut-only center text config ──────────────────────
+                if chartViewModel.chartConfig.chartType == .donut {
+                    ToolbarDivider()
+                    
+                    ToolbarField(label: "Hole Center Text") {
+                        Picker("", selection: $chartViewModel.chartConfig.donutCenterText) {
+                            ForEach(DonutCenterContent.allCases) { opt in
+                                Text(opt.rawValue).tag(opt)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .frame(width: 120)
+                    }
+                }
+                
                 // ── Bar / Horizontal Bar only controls ─────────────────
                 if chartViewModel.chartConfig.chartType == .horizontalBar {
                     ToolbarField(label: "Sorting") {
@@ -373,6 +472,11 @@ struct ChartsToolbar: View {
         .onChange(of: chartViewModel.chartConfig.seriesColumn) { _ in recompute() }
         .onChange(of: chartViewModel.chartConfig.colorTheme)  { _ in recompute() }
         .onChange(of: chartViewModel.chartConfig.stackMode)   { _ in recompute() }
+        .onChange(of: chartViewModel.chartConfig.sliceSortOrder) { _ in recompute() }
+        .onChange(of: chartViewModel.chartConfig.maxSlices)   { _ in recompute() }
+        .onChange(of: chartViewModel.chartConfig.groupSmallSlices) { _ in recompute() }
+        .onChange(of: chartViewModel.chartConfig.semiCircleMode) { _ in recompute() }
+        .onChange(of: chartViewModel.chartConfig.comparisonColumn) { _ in recompute() }
     }
     
     private func recompute() {

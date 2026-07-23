@@ -184,11 +184,43 @@ struct ChartsView: View {
                 highlightedSeries: highlightedSeries,
                 chartViewModel: chartViewModel
             )
+        case .scatter:
+            ScatterPlotView(
+                config: chartViewModel.chartConfig,
+                data: chartViewModel.chartData,
+                colors: chartViewModel.chartConfig.colorTheme.colors,
+                highlightedSeries: highlightedSeries,
+                chartViewModel: chartViewModel
+            )
+        case .bubble:
+            BubbleChartView(
+                config: chartViewModel.chartConfig,
+                data: chartViewModel.chartData,
+                colors: chartViewModel.chartConfig.colorTheme.colors,
+                highlightedSeries: highlightedSeries,
+                chartViewModel: chartViewModel
+            )
+        case .histogram:
+            HistogramView(
+                config: chartViewModel.chartConfig,
+                data: chartViewModel.chartData,
+                colors: chartViewModel.chartConfig.colorTheme.colors,
+                highlightedSeries: highlightedSeries,
+                chartViewModel: chartViewModel
+            )
+        case .boxPlot:
+            BoxPlotView(
+                config: chartViewModel.chartConfig,
+                data: chartViewModel.chartData,
+                colors: chartViewModel.chartConfig.colorTheme.colors,
+                highlightedSeries: highlightedSeries,
+                chartViewModel: chartViewModel
+            )
         default:
             EmptyStateView(
                 iconName: chartViewModel.chartConfig.chartType.iconName,
                 title: "\(chartViewModel.chartConfig.chartType.rawValue) Chart",
-                subtitle: "Visualization layout is coming soon. Test with Bar, Horizontal Bar, Line, Area, Pie, or Donut chart options."
+                subtitle: "Visualization layout is coming soon. Test with Bar, Horizontal Bar, Line, Area, Pie, Donut, Scatter, Bubble, Histogram, or Box Plot chart options."
             )
         }
     }
@@ -252,6 +284,10 @@ struct ChartsToolbar: View {
         chartViewModel.chartConfig.chartType == .pie || chartViewModel.chartConfig.chartType == .donut
     }
     
+    private var isScatterOrBubble: Bool {
+        chartViewModel.chartConfig.chartType == .scatter || chartViewModel.chartConfig.chartType == .bubble
+    }
+    
     var body: some View {
         let columns = dataViewModel.currentDataSet?.visibleColumns ?? []
         
@@ -267,13 +303,13 @@ struct ChartsToolbar: View {
                         .background(ColorPalette.cards)
                         .cornerRadius(6)
                         .overlay(RoundedRectangle(cornerRadius: 6).stroke(ColorPalette.border, lineWidth: 1))
-                        .frame(width: 160)
+                        .frame(width: 150)
                 }
                 
                 ToolbarDivider()
                 
                 // X-Axis Selector
-                ToolbarField(label: "X-Axis (Categories)") {
+                ToolbarField(label: chartViewModel.chartConfig.chartType == .histogram ? "Value Column" : "X-Axis") {
                     Picker("", selection: $chartViewModel.chartConfig.xAxisColumn) {
                         Text("Select Column").tag(String?.none)
                         ForEach(columns) { col in
@@ -285,17 +321,19 @@ struct ChartsToolbar: View {
                     .frame(width: 130)
                 }
                 
-                // Y-Axis Selector
-                ToolbarField(label: "Y-Axis (Numeric)") {
-                    Picker("", selection: $chartViewModel.chartConfig.yAxisColumn) {
-                        Text("Select Column").tag(String?.none)
-                        ForEach(columns) { col in
-                            Text(col.name).tag(String?.some(col.name))
+                // Y-Axis Selector (Not needed for Histogram)
+                if chartViewModel.chartConfig.chartType != .histogram {
+                    ToolbarField(label: "Y-Axis") {
+                        Picker("", selection: $chartViewModel.chartConfig.yAxisColumn) {
+                            Text("Select Column").tag(String?.none)
+                            ForEach(columns) { col in
+                                Text(col.name).tag(String?.some(col.name))
+                            }
                         }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .frame(width: 130)
                     }
-                    .pickerStyle(.menu)
-                    .labelsHidden()
-                    .frame(width: 130)
                 }
                 
                 // Color Theme Picker
@@ -375,7 +413,6 @@ struct ChartsToolbar: View {
                 
                 // ── Pie / Donut only controls ──────────────────────────
                 if isPieOrDonut {
-                    // Sort order configuration
                     ToolbarField(label: "Sort Slices") {
                         Picker("", selection: $chartViewModel.chartConfig.sliceSortOrder) {
                             ForEach(SliceSortOrder.allCases) { order in
@@ -387,7 +424,6 @@ struct ChartsToolbar: View {
                         .frame(width: 140)
                     }
                     
-                    // Max slices constraint
                     ToolbarField(label: "Max Slices") {
                         Picker("", selection: $chartViewModel.chartConfig.maxSlices) {
                             ForEach([5, 8, 12, 16, 20, 24], id: \.self) { num in
@@ -399,21 +435,18 @@ struct ChartsToolbar: View {
                         .frame(width: 60)
                     }
                     
-                    // Filter small slices (<2%)
                     ToolbarField(label: "Group Small (<2%)") {
                         Toggle("", isOn: $chartViewModel.chartConfig.groupSmallSlices)
                             .toggleStyle(.checkbox)
                             .labelsHidden()
                     }
                     
-                    // Explode all slices
                     ToolbarField(label: "Explode All") {
                         Toggle("", isOn: $chartViewModel.chartConfig.explodeAll)
                             .toggleStyle(.checkbox)
                             .labelsHidden()
                     }
                     
-                    // Semi Circle mode
                     ToolbarField(label: "Semi-Circle") {
                         Toggle("", isOn: $chartViewModel.chartConfig.semiCircleMode)
                             .toggleStyle(.checkbox)
@@ -422,7 +455,6 @@ struct ChartsToolbar: View {
                     
                     ToolbarDivider()
                     
-                    // Comparison Column Selection
                     ToolbarField(label: "Compare With") {
                         Picker("", selection: $chartViewModel.chartConfig.comparisonColumn) {
                             Text("None").tag(String?.none)
@@ -452,14 +484,183 @@ struct ChartsToolbar: View {
                     }
                 }
                 
-                // ── Bar / Horizontal Bar only controls ─────────────────
-                if chartViewModel.chartConfig.chartType == .horizontalBar {
-                    ToolbarField(label: "Sorting") {
-                        Toggle("Rank ↓", isOn: $chartViewModel.chartConfig.autoSort)
-                            .toggleStyle(.checkbox)
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(ColorPalette.textPrimary)
+                // ── Scatter & Bubble specific controls ─────────────────
+                if isScatterOrBubble {
+                    // Category coloring
+                    ToolbarField(label: "Color By Category") {
+                        Picker("", selection: $chartViewModel.chartConfig.seriesColumn) {
+                            Text("None").tag(String?.none)
+                            ForEach(columns) { col in
+                                Text(col.name).tag(String?.some(col.name))
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .frame(width: 120)
                     }
+                    
+                    // Trendline selector
+                    ToolbarField(label: "Trend Line") {
+                        Picker("", selection: $chartViewModel.chartConfig.trendLineType) {
+                            ForEach(TrendLineType.allCases) { type in
+                                Text(type.rawValue).tag(type)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .frame(width: 140)
+                    }
+                    
+                    // Show Quadrant toggles
+                    ToolbarField(label: "Quadrants") {
+                        Toggle("", isOn: $chartViewModel.chartConfig.showQuadrantLines)
+                            .toggleStyle(.checkbox)
+                            .labelsHidden()
+                    }
+                    
+                    // Zero Origin toggle
+                    ToolbarField(label: "Zero Origin") {
+                        Toggle("", isOn: $chartViewModel.chartConfig.zeroOrigin)
+                            .toggleStyle(.checkbox)
+                            .labelsHidden()
+                    }
+                }
+                
+                // ── Bubble Chart specific dimensions ────────────────────
+                if chartViewModel.chartConfig.chartType == .bubble {
+                    ToolbarDivider()
+                    
+                    ToolbarField(label: "Bubble Size (3D)") {
+                        Picker("", selection: $chartViewModel.chartConfig.bubbleSizeColumn) {
+                            Text("Select Size Column").tag(String?.none)
+                            ForEach(columns) { col in
+                                Text(col.name).tag(String?.some(col.name))
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .frame(width: 130)
+                    }
+                    
+                    ToolbarField(label: "Bubble Color (4D)") {
+                        Picker("", selection: $chartViewModel.chartConfig.bubbleColorColumn) {
+                            Text("None").tag(String?.none)
+                            ForEach(columns) { col in
+                                Text(col.name).tag(String?.some(col.name))
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .frame(width: 120)
+                    }
+                }
+                
+                // ── Histogram specific settings ─────────────────────────
+                if chartViewModel.chartConfig.chartType == .histogram {
+                    // Bin selector count slider
+                    ToolbarField(label: "Bins count (\(chartViewModel.chartConfig.histogramBinCount))") {
+                        Slider(value: Binding(get: {
+                            Double(chartViewModel.chartConfig.histogramBinCount)
+                        }, set: {
+                            chartViewModel.chartConfig.histogramBinCount = Int($0)
+                            chartViewModel.chartConfig.useAutoBin = false
+                        }), in: 5...50, step: 1)
+                        .frame(width: 100)
+                    }
+                    
+                    // Sturges Auto-bin rule checkbox
+                    ToolbarField(label: "Sturges Rule") {
+                        Toggle("", isOn: $chartViewModel.chartConfig.useAutoBin)
+                            .toggleStyle(.checkbox)
+                            .labelsHidden()
+                    }
+                    
+                    // Density percentage vs Frequency count toggle
+                    ToolbarField(label: "Metric Type") {
+                        Picker("", selection: $chartViewModel.chartConfig.histogramType) {
+                            ForEach(HistogramType.allCases) { type in
+                                Text(type.rawValue).tag(type)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .frame(width: 130)
+                    }
+                    
+                    // Show Bell curve
+                    ToolbarField(label: "Normal Curve") {
+                        Toggle("", isOn: $chartViewModel.chartConfig.showNormalCurve)
+                            .toggleStyle(.checkbox)
+                            .labelsHidden()
+                    }
+                    
+                    // Outlier highlight red bins
+                    ToolbarField(label: "Outliers Warning") {
+                        Toggle("", isOn: $chartViewModel.chartConfig.showOutlierHighlight)
+                            .toggleStyle(.checkbox)
+                            .labelsHidden()
+                    }
+                    
+                    // Cumulative sum histograms
+                    ToolbarField(label: "Cumulative") {
+                        Toggle("", isOn: $chartViewModel.chartConfig.cumulativeHistogram)
+                            .toggleStyle(.checkbox)
+                            .labelsHidden()
+                    }
+                }
+                
+                // ── Box Plot specific settings ──────────────────────────
+                if chartViewModel.chartConfig.chartType == .boxPlot {
+                    // Box sorting orders
+                    ToolbarField(label: "Sort Boxes By") {
+                        Picker("", selection: $chartViewModel.chartConfig.boxSortOrder) {
+                            ForEach(BoxSortOrder.allCases) { order in
+                                Text(order.rawValue).tag(order)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .frame(width: 130)
+                    }
+                    
+                    // Box orientation layout
+                    ToolbarField(label: "Layout") {
+                        Picker("", selection: $chartViewModel.chartConfig.boxPlotOrientation) {
+                            ForEach(BoxPlotOrientation.allCases) { orient in
+                                Text(orient.rawValue).tag(orient)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .frame(width: 110)
+                    }
+                    
+                    // Box notched confidence overlay
+                    ToolbarField(label: "Notched Medians") {
+                        Toggle("", isOn: $chartViewModel.chartConfig.boxPlotNotched)
+                            .toggleStyle(.checkbox)
+                            .labelsHidden()
+                    }
+                }
+                
+                // ── Ignored Null value warning indicator ───────────────
+                if chartViewModel.ignoredNullCount > 0 {
+                    ToolbarDivider()
+                    
+                    VStack(alignment: .center, spacing: 2) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .foregroundColor(Color(hex: "#EF4444"))
+                                .font(.system(size: 10))
+                            Text("\(chartViewModel.ignoredNullCount) Nulls")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(ColorPalette.textPrimary)
+                        }
+                        Text("Ignored")
+                            .font(.system(size: 8))
+                            .foregroundColor(ColorPalette.textSecondary)
+                    }
+                    .padding(.horizontal, 8)
                 }
                 
                 Spacer(minLength: 8)
@@ -477,6 +678,18 @@ struct ChartsToolbar: View {
         .onChange(of: chartViewModel.chartConfig.groupSmallSlices) { _ in recompute() }
         .onChange(of: chartViewModel.chartConfig.semiCircleMode) { _ in recompute() }
         .onChange(of: chartViewModel.chartConfig.comparisonColumn) { _ in recompute() }
+        .onChange(of: chartViewModel.chartConfig.trendLineType) { _ in recompute() }
+        .onChange(of: chartViewModel.chartConfig.showTrendLine) { _ in recompute() }
+        .onChange(of: chartViewModel.chartConfig.bubbleSizeColumn) { _ in recompute() }
+        .onChange(of: chartViewModel.chartConfig.bubbleColorColumn) { _ in recompute() }
+        .onChange(of: chartViewModel.chartConfig.histogramBinCount) { _ in recompute() }
+        .onChange(of: chartViewModel.chartConfig.useAutoBin) { _ in recompute() }
+        .onChange(of: chartViewModel.chartConfig.histogramType) { _ in recompute() }
+        .onChange(of: chartViewModel.chartConfig.boxSortOrder) { _ in recompute() }
+        .onChange(of: chartViewModel.chartConfig.boxPlotOrientation) { _ in recompute() }
+        .onChange(of: chartViewModel.chartConfig.boxPlotNotched) { _ in recompute() }
+        .onChange(of: chartViewModel.chartConfig.showQuadrantLines) { _ in recompute() }
+        .onChange(of: chartViewModel.chartConfig.zeroOrigin) { _ in recompute() }
     }
     
     private func recompute() {

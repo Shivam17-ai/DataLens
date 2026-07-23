@@ -152,6 +152,45 @@ enum SliceSortOrder: String, CaseIterable, Identifiable, Codable {
     var id: String { rawValue }
 }
 
+// MARK: - Trend Line Type
+
+enum TrendLineType: String, CaseIterable, Identifiable, Codable {
+    case none = "None"
+    case linear = "Linear Regression"
+    case polynomial = "Polynomial Curve (Order 2)"
+    
+    var id: String { rawValue }
+}
+
+// MARK: - Histogram Type (Y-Axis Metric)
+
+enum HistogramType: String, CaseIterable, Identifiable, Codable {
+    case frequency = "Frequency Count"
+    case density = "Density Percentage"
+    
+    var id: String { rawValue }
+}
+
+// MARK: - Box Sort Order
+
+enum BoxSortOrder: String, CaseIterable, Identifiable, Codable {
+    case alphabetical = "Category Name"
+    case median = "Median Value"
+    case mean = "Mean Value"
+    case original = "Original Order"
+    
+    var id: String { rawValue }
+}
+
+// MARK: - Box Plot Orientation
+
+enum BoxPlotOrientation: String, CaseIterable, Identifiable, Codable {
+    case vertical = "Vertical"
+    case horizontal = "Horizontal"
+    
+    var id: String { rawValue }
+}
+
 // MARK: - Chart Annotation Model
 
 struct ChartAnnotation: Identifiable, Codable, Equatable {
@@ -210,6 +249,33 @@ struct ChartConfig: Identifiable, Codable, Equatable {
     var comparisonColumn: String? = nil
     var sliceSortOrder: SliceSortOrder = .descending
     
+    // MARK: Statistical chart settings
+    
+    // Scatter & Bubble options
+    var bubbleSizeColumn: String? = nil
+    var bubbleColorColumn: String? = nil
+    var showTrendLine: Bool = false
+    var trendLineType: TrendLineType = .none
+    var showQuadrantLines: Bool = false
+    var showDensityOverlay: Bool = false
+    var xAxisLogScale: Bool = false
+    var yAxisLogScale: Bool = false
+    var zeroOrigin: Bool = false
+    
+    // Histogram options
+    var histogramBinCount: Int = 10
+    var useAutoBin: Bool = true // Sturges Rule
+    var histogramType: HistogramType = .frequency
+    var showNormalCurve: Bool = false
+    var showOutlierHighlight: Bool = false
+    var cumulativeHistogram: Bool = false
+    
+    // Box Plot options
+    var boxPlotNotched: Bool = false
+    var showViolinOverlay: Bool = false
+    var boxPlotOrientation: BoxPlotOrientation = .vertical
+    var boxSortOrder: BoxSortOrder = .alphabetical
+    
     // MARK: Persistent annotations
     var annotations: [ChartAnnotation] = []
 }
@@ -221,6 +287,11 @@ struct ChartDataPoint: Identifiable, Equatable {
     let x: String
     let y: Double
     let series: String
+    
+    // Additional parameters for statistical dimensions
+    var sizeValue: Double? = nil
+    var colorValue: Double? = nil
+    var rawIndex: Int? = nil
 }
 
 struct ChartData: Equatable {
@@ -245,6 +316,14 @@ struct ChartData: Equatable {
         let minY = values.min() ?? 0
         let maxY = values.max() ?? 1
         return minY...maxY
+    }
+    
+    /// Returns the overall X range across all points (for numerical X axis).
+    var xRange: ClosedRange<Double> {
+        let values = points.compactMap { Double($0.x) }
+        let minX = values.min() ?? 0
+        let maxX = values.max() ?? 1
+        return minX...maxX
     }
     
     /// Average Y value across all points.

@@ -32,6 +32,57 @@ struct BoxPlotStats: Equatable {
     let confidenceInterval: ClosedRange<Double>
 }
 
+// MARK: - Advanced Support Structs
+
+struct HeatmapCell: Identifiable, Equatable {
+    let id = UUID()
+    let xLabel: String
+    let yLabel: String
+    let value: Double?
+}
+
+struct TreemapItem: Identifiable, Equatable {
+    let id = UUID()
+    let label: String
+    let value: Double
+    var parentLabel: String? = nil
+    var color: Color? = nil
+}
+
+struct TreemapRect: Identifiable, Equatable {
+    let id = UUID()
+    let item: TreemapItem
+    let rect: CGRect
+    let depth: Int
+}
+
+struct WaterfallBar: Identifiable, Equatable {
+    let id = UUID()
+    let label: String
+    let changeValue: Double
+    let runningTotal: Double
+    let isTotal: Bool
+    let isSubtotal: Bool
+}
+
+struct FunnelStage: Identifiable, Equatable {
+    let id = UUID()
+    let label: String
+    let value: Double
+    let pctOfFirst: Double
+    let dropOffPct: Double
+    let color: Color
+}
+
+struct GaugeData: Equatable {
+    let value: Double
+    let minVal: Double
+    let maxVal: Double
+    let unit: String
+    let targetValue: Double?
+}
+
+
 // MARK: - Main ChartViewModel
 
 class ChartViewModel: ObservableObject {
@@ -48,6 +99,16 @@ class ChartViewModel: ObservableObject {
     @Published var histogramRawValues: [Double] = []
     @Published var boxPlotStats: [String: BoxPlotStats] = [:]
     @Published var selectedScatterPoints: Set<UUID> = []
+    
+    // Advanced workspace states
+    @Published var heatmapCells: [HeatmapCell] = []
+    @Published var heatmapXLabels: [String] = []
+    @Published var heatmapYLabels: [String] = []
+    @Published var treemapRects: [TreemapRect] = []
+    @Published var treemapItems: [TreemapItem] = []
+    @Published var waterfallBars: [WaterfallBar] = []
+    @Published var funnelStages: [FunnelStage] = []
+    @Published var gaugeData: GaugeData? = nil
     
     @Published var isLoading: Bool = false
     
@@ -97,6 +158,14 @@ class ChartViewModel: ObservableObject {
             self.histogramRawValues = []
             self.boxPlotStats = [:]
             self.selectedScatterPoints = []
+            self.heatmapCells = []
+            self.heatmapXLabels = []
+            self.heatmapYLabels = []
+            self.treemapRects = []
+            self.treemapItems = []
+            self.waterfallBars = []
+            self.funnelStages = []
+            self.gaugeData = nil
             return
         }
         
@@ -147,6 +216,16 @@ class ChartViewModel: ObservableObject {
                 data = self.prepareAreaData(dataset: dataset, config: config)
             case .pie, .donut:
                 data = self.preparePieData(dataset: dataset, config: config)
+            case .heatmap:
+                data = self.prepareHeatmapData(dataset: dataset, config: config)
+            case .treemap:
+                data = self.prepareTreemapData(dataset: dataset, config: config)
+            case .waterfall:
+                data = self.prepareWaterfallData(dataset: dataset, config: config)
+            case .funnel:
+                data = self.prepareFunnelData(dataset: dataset, config: config)
+            case .gauge:
+                data = self.prepareGaugeData(dataset: dataset, config: config)
             default:
                 data = self.prepareDefaultBarData(dataset: dataset, config: config)
             }
@@ -670,6 +749,438 @@ class ChartViewModel: ObservableObject {
         }
         let weight = index - Double(lower)
         return sortedValues[lower] * (1.0 - weight) + sortedValues[upper] * weight
+    }
+    
+    // MARK: - Advanced Chart Data Preparation
+    
+    func prepareHeatmapData(dataset: DataSet, config: ChartConfig) -> ChartData {
+        guard let xAxis = config.xAxisColumn,
+              let yAxis = config.seriesColumn,
+              let valueCol = config.yAxisColumn else {
+            return ChartData()
+        }
+        
+        var cellMap: [String: [String: Double]] = [:]
+        var allX = Set<String>()
+        var allY = Set<String>()
+        var nulls = 0
+        
+        for row in dataset.rows {
+            let xVal = extractXLabel(row: row, column: xAxis)
+            let yVal = extractXLabel(row: row, column: yAxis)
+            if let val = extractYValueOptional(row: row, column: valueCol) {
+                cellMap[xVal, default: [:]][yVal] = val
+                allX.insert(xVal)
+                allY.insert(yVal)
+            } else {
+                nulls += 1
+            }
+        }
+        
+        DispatchQueue.main.async {
+            self.ignoredNullCount = nulls
+        }
+        
+        var sortedX = allX.sorted()
+        var sortedY = allY.sorted()
+        
+        if config.clusterHeatmap {
+            sortedX = clusterLabels(sortedX, against: sortedY, cellMap: cellMap)
+            var invertedMap: [String: [String: Double]] = [:]
+            for (x, yDict) in cellMap {
+                for (y, val) in yDict {
+                    invertedMap[y, default: [:]][x] = val
+                }
+            }
+            sortedY = clusterLabels(sortedY, against: sortedX, cellMap: invertedMap)
+        }
+        
+        var cells: [HeatmapCell] = []
+        var points: [ChartDataPoint] = []
+        
+        for x in sortedX {
+            for y in sortedY {
+                let val = cellMap[x]?[y]
+                cells.append(HeatmapCell(xLabel: x, yLabel: y, value: val))
+                if let v = val {
+                    points.append(ChartDataPoint(x: "\(x)|\(y)", y: v, series: "Value"))
+                }
+            }
+        }
+        
+        DispatchQueue.main.async {
+            self.heatmapXLabels = sortedX
+            self.heatmapYLabels = sortedY
+            self.heatmapCells = cells
+        }
+        
+        return ChartData(points: points)
+    }
+    
+    private func clusterLabels(_ labels: [String], against others: [String], cellMap: [String: [String: Double]]) -> [String] {
+        guard labels.count > 1 else { return labels }
+        
+        func distance(_ a: String, _ b: String) -> Double {
+            var sum = 0.0
+            for other in others {
+                let valA = cellMap[a]?[other] ?? 0.0
+                let valB = cellMap[b]?[other] ?? 0.0
+                sum += pow(valA - valB, 2)
+            }
+            return sqrt(sum)
+        }
+        
+        var unvisited = Set(labels)
+        var result: [String] = []
+        
+        if let first = labels.first {
+            result.append(first)
+            unvisited.remove(first)
+        }
+        
+        while !unvisited.isEmpty {
+            let last = result.last!
+            var closest: String? = nil
+            var minDist = Double.infinity
+            
+            for item in unvisited {
+                let dist = distance(last, item)
+                if dist < minDist {
+                    minDist = dist
+                    closest = item
+                }
+            }
+            
+            if let next = closest {
+                result.append(next)
+                unvisited.remove(next)
+            } else {
+                break
+            }
+        }
+        
+        return result
+    }
+    
+    func prepareTreemapData(dataset: DataSet, config: ChartConfig) -> ChartData {
+        guard let xAxis = config.xAxisColumn else {
+            return ChartData()
+        }
+        
+        let valueCol = config.yAxisColumn ?? ""
+        var items: [TreemapItem] = []
+        var nulls = 0
+        
+        if let seriesCol = config.seriesColumn {
+            for row in dataset.rows {
+                let parent = extractXLabel(row: row, column: xAxis)
+                let child = extractXLabel(row: row, column: seriesCol)
+                let val = extractYValueOptional(row: row, column: valueCol) ?? 0.0
+                if val <= 0 {
+                    nulls += 1
+                    continue
+                }
+                items.append(TreemapItem(label: child, value: val, parentLabel: parent))
+            }
+        } else {
+            var flatGroup: [String: Double] = [:]
+            for row in dataset.rows {
+                let label = extractXLabel(row: row, column: xAxis)
+                let val = extractYValueOptional(row: row, column: valueCol) ?? 0.0
+                if val <= 0 {
+                    nulls += 1
+                    continue
+                }
+                flatGroup[label, default: 0.0] += val
+            }
+            for (label, val) in flatGroup {
+                items.append(TreemapItem(label: label, value: val, parentLabel: nil))
+            }
+        }
+        
+        DispatchQueue.main.async {
+            self.ignoredNullCount = nulls
+            self.treemapItems = items
+        }
+        
+        let points = items.map { ChartDataPoint(x: $0.label, y: $0.value, series: $0.parentLabel ?? "Data") }
+        return ChartData(points: points)
+    }
+    
+    func calculateTreemapLayout(items: [TreemapItem], in rect: CGRect, depth: Int) -> [TreemapRect] {
+        guard !items.isEmpty, rect.width > 0, rect.height > 0 else { return [] }
+        
+        let validItems = items.filter { $0.value > 0 }
+        guard !validItems.isEmpty else { return [] }
+        
+        if depth == 1 {
+            let totalValue = validItems.map { $0.value }.reduce(0.0, +)
+            var results: [TreemapRect] = []
+            squarify(items: validItems.sorted { $0.value > $1.value }, currentRect: rect, totalValue: totalValue, results: &results, depth: 1)
+            return results
+        } else {
+            let parentGroups = Dictionary(grouping: validItems, by: { $0.parentLabel ?? "Default" })
+            let parentItems = parentGroups.map { parent, children in
+                TreemapItem(label: parent, value: children.map { $0.value }.reduce(0.0, +))
+            }.sorted { $0.value > $1.value }
+            
+            let totalValue = parentItems.map { $0.value }.reduce(0.0, +)
+            var parentResults: [TreemapRect] = []
+            squarify(items: parentItems, currentRect: rect, totalValue: totalValue, results: &parentResults, depth: 1)
+            
+            var allResults: [TreemapRect] = []
+            for parentRect in parentResults {
+                allResults.append(parentRect)
+                
+                let children = parentGroups[parentRect.item.label] ?? []
+                let innerRect: CGRect
+                if parentRect.rect.height > 34 {
+                    innerRect = CGRect(x: parentRect.rect.minX + 2, y: parentRect.rect.minY + 26, width: parentRect.rect.width - 4, height: parentRect.rect.height - 28)
+                } else {
+                    innerRect = parentRect.rect
+                }
+                
+                if innerRect.width > 0 && innerRect.height > 0 && !children.isEmpty {
+                    let childTotal = children.map { $0.value }.reduce(0.0, +)
+                    var childResults: [TreemapRect] = []
+                    squarify(items: children.sorted { $0.value > $1.value }, currentRect: innerRect, totalValue: childTotal, results: &childResults, depth: 2)
+                    allResults.append(contentsOf: childResults)
+                }
+            }
+            return allResults
+        }
+    }
+    
+    private func squarify(items: [TreemapItem], currentRect: CGRect, totalValue: Double, results: inout [TreemapRect], depth: Int) {
+        guard !items.isEmpty else { return }
+        
+        var row: [TreemapItem] = []
+        var remaining = items
+        var rect = currentRect
+        
+        while !remaining.isEmpty {
+            let nextItem = remaining.first!
+            var testRow = row
+            testRow.append(nextItem)
+            
+            let currentWorst = worstAspectRatio(row: row, width: min(rect.width, rect.height), totalValue: totalValue, rect: rect)
+            let testWorst = worstAspectRatio(row: testRow, width: min(rect.width, rect.height), totalValue: totalValue, rect: rect)
+            
+            if row.isEmpty || testWorst <= currentWorst {
+                row.append(nextItem)
+                remaining.removeFirst()
+            } else {
+                rect = layoutRow(row: row, rect: rect, totalValue: totalValue, results: &results, depth: depth)
+                row.removeAll()
+            }
+        }
+        
+        if !row.isEmpty {
+            _ = layoutRow(row: row, rect: rect, totalValue: totalValue, results: &results, depth: depth)
+        }
+    }
+    
+    private func worstAspectRatio(row: [TreemapItem], width: CGFloat, totalValue: Double, rect: CGRect) -> CGFloat {
+        guard !row.isEmpty, totalValue > 0, width > 0 else { return CGFloat.infinity }
+        let rowSum = row.map { $0.value }.reduce(0, +)
+        let area = rect.width * rect.height
+        let rowArea = CGFloat(rowSum / totalValue) * area
+        let rowWidth = rowArea / width
+        
+        var worst = 0.0
+        for item in row {
+            let itemArea = CGFloat(item.value / totalValue) * area
+            let itemLength = itemArea / rowWidth
+            let ratio = max(rowWidth / itemLength, itemLength / rowWidth)
+            worst = max(worst, Double(ratio))
+        }
+        return CGFloat(worst)
+    }
+    
+    private func layoutRow(row: [TreemapItem], rect: CGRect, totalValue: Double, results: inout [TreemapRect], depth: Int) -> CGRect {
+        let rowSum = row.map { $0.value }.reduce(0, +)
+        let area = rect.width * rect.height
+        let rowArea = CGFloat(rowSum / totalValue) * area
+        
+        let isVertical = rect.width >= rect.height
+        let rowWidth = isVertical ? rowArea / rect.height : rowArea / rect.width
+        
+        var offset: CGFloat = 0
+        for item in row {
+            let itemArea = CGFloat(item.value / totalValue) * area
+            let itemLength = itemArea / rowWidth
+            
+            let itemRect: CGRect
+            if isVertical {
+                itemRect = CGRect(x: rect.minX + offset, y: rect.minY, width: rowWidth, height: itemLength)
+                offset += itemLength
+            } else {
+                itemRect = CGRect(x: rect.minX, y: rect.minY + offset, width: itemLength, height: rowWidth)
+                offset += itemLength
+            }
+            
+            results.append(TreemapRect(item: item, rect: itemRect, depth: depth))
+        }
+        
+        if isVertical {
+            return CGRect(x: rect.minX + rowWidth, y: rect.minY, width: rect.width - rowWidth, height: rect.height)
+        } else {
+            return CGRect(x: rect.minX, y: rect.minY + rowWidth, width: rect.width, height: rect.height - rowWidth)
+        }
+    }
+    
+    func prepareWaterfallData(dataset: DataSet, config: ChartConfig) -> ChartData {
+        guard let xAxis = config.xAxisColumn, let yAxis = config.yAxisColumn else {
+            return ChartData()
+        }
+        
+        var rawBars: [(label: String, val: Double)] = []
+        var nulls = 0
+        
+        for row in dataset.rows {
+            let label = extractXLabel(row: row, column: xAxis)
+            if let val = extractYValueOptional(row: row, column: yAxis) {
+                rawBars.append((label: label, val: val))
+            } else {
+                nulls += 1
+            }
+        }
+        
+        DispatchQueue.main.async {
+            self.ignoredNullCount = nulls
+        }
+        
+        switch config.sliceSortOrder {
+        case .descending:
+            rawBars.sort { $0.val > $1.val }
+        case .ascending:
+            rawBars.sort { $0.val < $1.val }
+        case .alphabetical:
+            rawBars.sort { $0.label.localizedCaseInsensitiveCompare($1.label) == .orderedAscending }
+        case .original:
+            break
+        }
+        
+        var bars: [WaterfallBar] = []
+        var runningTotal = 0.0
+        
+        for item in rawBars {
+            let isSub = item.label.localizedCaseInsensitiveContains("subtotal") || item.label.localizedCaseInsensitiveContains("margin") || item.label.localizedCaseInsensitiveContains("profit")
+            
+            if isSub {
+                let change = item.val == 0 ? 0.0 : item.val
+                runningTotal += change
+                bars.append(WaterfallBar(label: item.label, changeValue: change, runningTotal: runningTotal, isTotal: false, isSubtotal: true))
+            } else {
+                runningTotal += item.val
+                bars.append(WaterfallBar(label: item.label, changeValue: item.val, runningTotal: runningTotal, isTotal: false, isSubtotal: false))
+            }
+        }
+        
+        if config.showTotalBar && !bars.isEmpty {
+            bars.append(WaterfallBar(label: "Total", changeValue: 0.0, runningTotal: runningTotal, isTotal: true, isSubtotal: false))
+        }
+        
+        DispatchQueue.main.async {
+            self.waterfallBars = bars
+        }
+        
+        let points = bars.map { ChartDataPoint(x: $0.label, y: $0.runningTotal, series: $0.isTotal ? "Total" : ($0.isSubtotal ? "Subtotal" : ($0.changeValue >= 0 ? "Positive" : "Negative"))) }
+        return ChartData(points: points)
+    }
+    
+    func prepareFunnelData(dataset: DataSet, config: ChartConfig) -> ChartData {
+        guard let xAxis = config.xAxisColumn, let yAxis = config.yAxisColumn else {
+            return ChartData()
+        }
+        
+        var rawStages: [(label: String, val: Double)] = []
+        var nulls = 0
+        
+        for row in dataset.rows {
+            let label = extractXLabel(row: row, column: xAxis)
+            if let val = extractYValueOptional(row: row, column: yAxis) {
+                rawStages.append((label: label, val: val))
+            } else {
+                nulls += 1
+            }
+        }
+        
+        DispatchQueue.main.async {
+            self.ignoredNullCount = nulls
+        }
+        
+        rawStages.sort { $0.val > $1.val }
+        
+        guard !rawStages.isEmpty else { return ChartData() }
+        
+        let firstVal = rawStages.first!.val
+        var stages: [FunnelStage] = []
+        
+        for (idx, item) in rawStages.enumerated() {
+            let pct = firstVal > 0 ? (item.val / firstVal) * 100.0 : 0.0
+            var dropOff = 0.0
+            if idx > 0 {
+                let prevVal = rawStages[idx - 1].val
+                dropOff = prevVal > 0 ? ((prevVal - item.val) / prevVal) * 100.0 : 0.0
+            }
+            
+            let pctStep = Double(idx) / Double(max(1, rawStages.count - 1))
+            let themeColors = config.colorTheme.colors
+            let baseColor = themeColors.first ?? ColorPalette.accent
+            let color = baseColor.opacity(1.0 - (pctStep * 0.5))
+            
+            stages.append(FunnelStage(label: item.label, value: item.val, pctOfFirst: pct, dropOffPct: dropOff, color: color))
+        }
+        
+        DispatchQueue.main.async {
+            self.funnelStages = stages
+        }
+        
+        let points = stages.map { ChartDataPoint(x: $0.label, y: $0.value, series: $0.label) }
+        return ChartData(points: points)
+    }
+    
+    func prepareGaugeData(dataset: DataSet, config: ChartConfig) -> ChartData {
+        guard let yAxis = config.yAxisColumn else {
+            return ChartData()
+        }
+        
+        var values: [Double] = []
+        var nulls = 0
+        
+        for row in dataset.rows {
+            if let val = extractYValueOptional(row: row, column: yAxis) {
+                values.append(val)
+            } else {
+                nulls += 1
+            }
+        }
+        
+        DispatchQueue.main.async {
+            self.ignoredNullCount = nulls
+        }
+        
+        guard !values.isEmpty else { return ChartData() }
+        
+        let sum = values.reduce(0.0, +)
+        let avg = sum / Double(values.count)
+        let targetVal = config.gaugeTargetValue
+        
+        let data = GaugeData(
+            value: avg,
+            minVal: config.gaugeMinValue,
+            maxVal: config.gaugeMaxValue,
+            unit: config.gaugeUnit,
+            targetValue: targetVal
+        )
+        
+        DispatchQueue.main.async {
+            self.gaugeData = data
+        }
+        
+        let points = [ChartDataPoint(x: "KPI", y: avg, series: "Gauge")]
+        return ChartData(points: points)
     }
     
     // MARK: - Formatting/Data Parsing Utilities

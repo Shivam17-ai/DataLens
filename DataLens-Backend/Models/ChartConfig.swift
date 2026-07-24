@@ -191,6 +191,37 @@ enum BoxPlotOrientation: String, CaseIterable, Identifiable, Codable {
     var id: String { rawValue }
 }
 
+// MARK: - Heatmap Color Scale
+
+enum HeatmapColorScale: String, CaseIterable, Identifiable, Codable {
+    case cool = "Cool"
+    case hot = "Hot"
+    case purple = "Purple"
+    case diverging = "Diverging"
+    
+    var id: String { rawValue }
+}
+
+// MARK: - Funnel Style
+
+enum FunnelStyle: String, CaseIterable, Identifiable, Codable {
+    case classic = "Classic"
+    case bar = "Bar"
+    case pyramid = "Pyramid"
+    
+    var id: String { rawValue }
+}
+
+// MARK: - Gauge Style
+
+enum GaugeStyle: String, CaseIterable, Identifiable, Codable {
+    case speedometer = "Speedometer"
+    case progressArc = "Progress Arc"
+    case multiBand = "Multi Band"
+    
+    var id: String { rawValue }
+}
+
 // MARK: - Chart Annotation Model
 
 struct ChartAnnotation: Identifiable, Codable, Equatable {
@@ -275,6 +306,34 @@ struct ChartConfig: Identifiable, Codable, Equatable {
     var showViolinOverlay: Bool = false
     var boxPlotOrientation: BoxPlotOrientation = .vertical
     var boxSortOrder: BoxSortOrder = .alphabetical
+    
+    // MARK: Advanced chart settings
+    
+    // Heatmap settings
+    var heatmapColorScale: HeatmapColorScale = .cool
+    var showCellLabels: Bool = false
+    var clusterHeatmap: Bool = false
+    
+    // Treemap settings
+    var treemapDepth: Int = 2
+    
+    // Waterfall settings
+    var showWaterfallConnectors: Bool = true
+    var showRunningTotalLine: Bool = false
+    var showTotalBar: Bool = true
+    
+    // Funnel settings
+    var funnelStyle: FunnelStyle = .classic
+    
+    // Gauge settings
+    var gaugeStyle: GaugeStyle = .speedometer
+    var gaugeMinValue: Double = 0
+    var gaugeMaxValue: Double = 100
+    var gaugeTargetValue: Double? = nil
+    var gaugeUnit: String = ""
+    var multiGaugeColumns: [String] = []
+    var lowZoneMax: Double = 0.33
+    var highZoneMin: Double = 0.66
     
     // MARK: Persistent annotations
     var annotations: [ChartAnnotation] = []

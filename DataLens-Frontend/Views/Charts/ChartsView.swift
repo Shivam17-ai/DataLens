@@ -216,11 +216,51 @@ struct ChartsView: View {
                 highlightedSeries: highlightedSeries,
                 chartViewModel: chartViewModel
             )
+        case .heatmap:
+            HeatmapView(
+                config: chartViewModel.chartConfig,
+                data: chartViewModel.chartData,
+                colors: chartViewModel.chartConfig.colorTheme.colors,
+                highlightedSeries: highlightedSeries,
+                chartViewModel: chartViewModel
+            )
+        case .treemap:
+            TreemapView(
+                config: chartViewModel.chartConfig,
+                data: chartViewModel.chartData,
+                colors: chartViewModel.chartConfig.colorTheme.colors,
+                highlightedSeries: highlightedSeries,
+                chartViewModel: chartViewModel
+            )
+        case .waterfall:
+            WaterfallChartView(
+                config: chartViewModel.chartConfig,
+                data: chartViewModel.chartData,
+                colors: chartViewModel.chartConfig.colorTheme.colors,
+                highlightedSeries: highlightedSeries,
+                chartViewModel: chartViewModel
+            )
+        case .funnel:
+            FunnelChartView(
+                config: chartViewModel.chartConfig,
+                data: chartViewModel.chartData,
+                colors: chartViewModel.chartConfig.colorTheme.colors,
+                highlightedSeries: highlightedSeries,
+                chartViewModel: chartViewModel
+            )
+        case .gauge:
+            GaugeChartView(
+                config: chartViewModel.chartConfig,
+                data: chartViewModel.chartData,
+                colors: chartViewModel.chartConfig.colorTheme.colors,
+                highlightedSeries: highlightedSeries,
+                chartViewModel: chartViewModel
+            )
         default:
             EmptyStateView(
                 iconName: chartViewModel.chartConfig.chartType.iconName,
                 title: "\(chartViewModel.chartConfig.chartType.rawValue) Chart",
-                subtitle: "Visualization layout is coming soon. Test with Bar, Horizontal Bar, Line, Area, Pie, Donut, Scatter, Bubble, Histogram, or Box Plot chart options."
+                subtitle: "Visualization layout is coming soon."
             )
         }
     }
@@ -643,6 +683,113 @@ struct ChartsToolbar: View {
                     }
                 }
                 
+                // ── Heatmap specific settings ───────────────────────────
+                if chartViewModel.chartConfig.chartType == .heatmap {
+                    ToolbarField(label: "Color Scale") {
+                        Picker("", selection: $chartViewModel.chartConfig.heatmapColorScale) {
+                            ForEach(HeatmapColorScale.allCases) { scale in
+                                Text(scale.rawValue).tag(scale)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .frame(width: 100)
+                    }
+                    ToolbarField(label: "Labels") {
+                        Toggle("", isOn: $chartViewModel.chartConfig.showCellLabels)
+                            .toggleStyle(.checkbox)
+                            .labelsHidden()
+                    }
+                    ToolbarField(label: "Cluster") {
+                        Toggle("", isOn: $chartViewModel.chartConfig.clusterHeatmap)
+                            .toggleStyle(.checkbox)
+                            .labelsHidden()
+                    }
+                }
+                
+                // ── Treemap specific settings ───────────────────────────
+                if chartViewModel.chartConfig.chartType == .treemap {
+                    ToolbarField(label: "Depth") {
+                        Picker("", selection: $chartViewModel.chartConfig.treemapDepth) {
+                            Text("1 - Flat").tag(1)
+                            Text("2 - Nested").tag(2)
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .frame(width: 90)
+                    }
+                }
+                
+                // ── Waterfall specific settings ──────────────────────────
+                if chartViewModel.chartConfig.chartType == .waterfall {
+                    ToolbarField(label: "Connectors") {
+                        Toggle("", isOn: $chartViewModel.chartConfig.showWaterfallConnectors)
+                            .toggleStyle(.checkbox)
+                            .labelsHidden()
+                    }
+                    ToolbarField(label: "Running Total") {
+                        Toggle("", isOn: $chartViewModel.chartConfig.showRunningTotalLine)
+                            .toggleStyle(.checkbox)
+                            .labelsHidden()
+                    }
+                    ToolbarField(label: "Total Bar") {
+                        Toggle("", isOn: $chartViewModel.chartConfig.showTotalBar)
+                            .toggleStyle(.checkbox)
+                            .labelsHidden()
+                    }
+                }
+                
+                // ── Funnel specific settings ─────────────────────────────
+                if chartViewModel.chartConfig.chartType == .funnel {
+                    ToolbarField(label: "Style") {
+                        Picker("", selection: $chartViewModel.chartConfig.funnelStyle) {
+                            ForEach(FunnelStyle.allCases) { style in
+                                Text(style.rawValue).tag(style)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .frame(width: 90)
+                    }
+                    ToolbarField(label: "Labels Inside") {
+                        Toggle("", isOn: $chartViewModel.chartConfig.showDataLabels)
+                            .toggleStyle(.checkbox)
+                            .labelsHidden()
+                    }
+                }
+                
+                // ── Gauge specific settings ──────────────────────────────
+                if chartViewModel.chartConfig.chartType == .gauge {
+                    ToolbarField(label: "Style") {
+                        Picker("", selection: $chartViewModel.chartConfig.gaugeStyle) {
+                            ForEach(GaugeStyle.allCases) { style in
+                                Text(style.rawValue).tag(style)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .frame(width: 100)
+                    }
+                    
+                    ToolbarField(label: "Unit") {
+                        TextField("%", text: $chartViewModel.chartConfig.gaugeUnit)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 40)
+                    }
+                    
+                    ToolbarField(label: "Min") {
+                        TextField("0", value: $chartViewModel.chartConfig.gaugeMinValue, formatter: NumberFormatter())
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 40)
+                    }
+                    
+                    ToolbarField(label: "Max") {
+                        TextField("100", value: $chartViewModel.chartConfig.gaugeMaxValue, formatter: NumberFormatter())
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 45)
+                    }
+                }
+                
                 // ── Ignored Null value warning indicator ───────────────
                 if chartViewModel.ignoredNullCount > 0 {
                     ToolbarDivider()
@@ -690,6 +837,20 @@ struct ChartsToolbar: View {
         .onChange(of: chartViewModel.chartConfig.boxPlotNotched) { _ in recompute() }
         .onChange(of: chartViewModel.chartConfig.showQuadrantLines) { _ in recompute() }
         .onChange(of: chartViewModel.chartConfig.zeroOrigin) { _ in recompute() }
+        .onChange(of: chartViewModel.chartConfig.heatmapColorScale) { _ in recompute() }
+        .onChange(of: chartViewModel.chartConfig.showCellLabels) { _ in recompute() }
+        .onChange(of: chartViewModel.chartConfig.clusterHeatmap) { _ in recompute() }
+        .onChange(of: chartViewModel.chartConfig.treemapDepth) { _ in recompute() }
+        .onChange(of: chartViewModel.chartConfig.showWaterfallConnectors) { _ in recompute() }
+        .onChange(of: chartViewModel.chartConfig.showRunningTotalLine) { _ in recompute() }
+        .onChange(of: chartViewModel.chartConfig.showTotalBar) { _ in recompute() }
+        .onChange(of: chartViewModel.chartConfig.funnelStyle) { _ in recompute() }
+        .onChange(of: chartViewModel.chartConfig.showDataLabels) { _ in recompute() }
+        .onChange(of: chartViewModel.chartConfig.gaugeStyle) { _ in recompute() }
+        .onChange(of: chartViewModel.chartConfig.gaugeMinValue) { _ in recompute() }
+        .onChange(of: chartViewModel.chartConfig.gaugeMaxValue) { _ in recompute() }
+        .onChange(of: chartViewModel.chartConfig.gaugeTargetValue) { _ in recompute() }
+        .onChange(of: chartViewModel.chartConfig.gaugeUnit) { _ in recompute() }
     }
     
     private func recompute() {

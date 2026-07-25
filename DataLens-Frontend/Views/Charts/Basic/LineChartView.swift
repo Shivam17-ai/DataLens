@@ -13,6 +13,8 @@ struct LineChartView: View {
     let highlightedSeries: Set<String>
     @ObservedObject var chartViewModel: ChartViewModel
 
+    @EnvironmentObject var crossFilterManager: CrossFilterManager
+
     // MARK: Animation
     @State private var animationProgress: Double = 0.0
     @State private var pointsVisible: Bool = false
@@ -50,6 +52,9 @@ struct LineChartView: View {
                         let isMuted = !highlightedSeries.isEmpty && !highlightedSeries.contains(series)
 
                         ForEach(seriesPoints) { pt in
+                            let ptDimmed = isPointDimmed(pt)
+                            let currentOpacity = isMuted ? 0.2 : (ptDimmed ? 0.3 : 1.0)
+                            
                             // Line path
                             LineMark(
                                 x: .value("X", pt.x),
@@ -57,7 +62,7 @@ struct LineChartView: View {
                             )
                             .interpolationMethod(config.interpolationMode == .curved ? .catmullRom : .linear)
                             .foregroundStyle(seriesColors[series] ?? colors.first ?? .blue)
-                            .opacity(isMuted ? 0.2 : 1.0)
+                            .opacity(currentOpacity)
                             .lineStyle(StrokeStyle(lineWidth: 2.5))
 
                             // Data point circles
@@ -68,7 +73,7 @@ struct LineChartView: View {
                                 )
                                 .symbolSize(hoverX == pt.x ? 80 : 28)   // hover: 10pt (√80≈9pt), normal: 6pt (√28≈5pt)
                                 .foregroundStyle(seriesColors[series] ?? colors.first ?? .blue)
-                                .opacity(isMuted ? 0.2 : 1.0)
+                                .opacity(currentOpacity)
                             }
 
                             // Optional data labels above each point
@@ -82,7 +87,7 @@ struct LineChartView: View {
                                     Text(pt.y.formatted(decimals: 1))
                                         .font(.system(size: 9, weight: .bold))
                                         .foregroundColor(ColorPalette.textSecondary)
-                                        .opacity(isMuted ? 0.2 : 1.0)
+                                        .opacity(currentOpacity)
                                 }
                             }
                         }
@@ -162,13 +167,30 @@ struct LineChartView: View {
                                     hoverX = nil
                                 }
                             }
-                            .onTapGesture { location in
-                                // Detect nearest data point to tap for annotation
-                                if let xStr: String = proxy.value(atX: location.x) {
-                                    if let point = filteredPoints.first(where: { $0.x == xStr }) {
-                                        pendingAnnotationPoint = point
-                                        annotationDraft = ""
-                                        showAnnotationInput = true
+                            .gesture(
+                                TapGesture(count: 2)
+                                    .onEnded { _ in
+                                        if let xStr = hoverX, let point = filteredPoints.first(where: { $0.x == xStr }) {
+                                            pendingAnnotationPoint = point
+                                            annotationDraft = ""
+                                            showAnnotationInput = true
+                                        }
+                                    }
+                            )
+                            .onTapGesture {
+                                if let xStr = hoverX, let point = filteredPoints.first(where: { $0.x == xStr }) {
+                                    if let col = config.xAxisColumn {
+                                        if crossFilterManager.activeFilters.contains(where: { $0.sourceChartId == config.id && $0.columnName == col }) {
+                                            crossFilterManager.activeFilters.removeAll { $0.sourceChartId == config.id && $0.columnName == col }
+                                        } else {
+                                            let targetFilter = CrossFilter(
+                                                sourceChartId: config.id,
+                                                columnName: col,
+                                                filterType: .categorical(values: [point.x]),
+                                                label: "\(col): \(point.x)"
+                                            )
+                                            crossFilterManager.addFilter(targetFilter)
+                                        }
                                     }
                                 }
                             }
@@ -216,6 +238,16 @@ struct LineChartView: View {
     }
 
     // MARK: - Helpers
+
+    private func isPointDimmed(_ pt: ChartDataPoint) -> Bool {
+        guard let col = config.xAxisColumn else { return false }
+        if let filter = crossFilterManager.activeFilters.first(where: { $0.sourceChartId == config.id && $0.columnName == col }) {
+            if case .categorical(let values) = filter.filterType {
+                return !values.contains(pt.x)
+            }
+        }
+        return false
+    }
 
     /// Returns the visible window of data points respecting zoom/pan sliders.
     private func visiblePoints() -> [ChartDataPoint] {

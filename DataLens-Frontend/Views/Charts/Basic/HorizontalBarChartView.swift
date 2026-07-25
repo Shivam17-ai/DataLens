@@ -9,6 +9,8 @@ struct HorizontalBarChartView: View {
     let colors: [Color]
     let highlightedSeries: Set<String>
     
+    @EnvironmentObject var crossFilterManager: CrossFilterManager
+    
     @State private var animationProgress = 0.0
     @State private var hoveredPoint: ChartDataPoint? = nil
     @State private var hoverLocation: CGPoint = .zero
@@ -35,7 +37,7 @@ struct HorizontalBarChartView: View {
                 )
                 .foregroundStyle(by: .value("Series", item.point.series))
                 .cornerRadius(4)
-                .opacity(selectedPointId == nil || selectedPointId == item.point.id ? 1.0 : 0.4)
+                .opacity(selectedPointId == nil || selectedPointId == item.point.id ? 1.0 : 0.3) // 30% opacity for non-matching
             }
         }
         .chartForegroundStyleScale(
@@ -99,8 +101,20 @@ struct HorizontalBarChartView: View {
                         if let hovered = hoveredPoint {
                             if selectedPointId == hovered.id {
                                 selectedPointId = nil
+                                if let col = config.xAxisColumn {
+                                    crossFilterManager.activeFilters.removeAll { $0.sourceChartId == config.id && $0.columnName == col }
+                                }
                             } else {
                                 selectedPointId = hovered.id
+                                if let col = config.xAxisColumn {
+                                    let filter = CrossFilter(
+                                        sourceChartId: config.id,
+                                        columnName: col,
+                                        filterType: .categorical(values: [hovered.x]),
+                                        label: "\(col): \(hovered.x)"
+                                    )
+                                    crossFilterManager.addFilter(filter)
+                                }
                             }
                         }
                     }

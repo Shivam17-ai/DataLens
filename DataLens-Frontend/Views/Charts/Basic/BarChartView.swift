@@ -9,6 +9,8 @@ struct BarChartView: View {
     let colors: [Color]
     let highlightedSeries: Set<String>
     
+    @EnvironmentObject var crossFilterManager: CrossFilterManager
+    
     @State private var animationProgress = 0.0
     @State private var hoveredPoint: ChartDataPoint? = nil
     @State private var hoverLocation: CGPoint = .zero
@@ -68,7 +70,7 @@ struct BarChartView: View {
                         )
                         .foregroundStyle(by: .value("Series", point.series))
                         .cornerRadius(4)
-                        .opacity(selectedPointId == nil || selectedPointId == point.id ? 1.0 : 0.4)
+                        .opacity(selectedPointId == nil || selectedPointId == point.id ? 1.0 : 0.3) // 30% opacity for non-matching
                     }
                 }
                 .chartForegroundStyleScale(
@@ -110,7 +112,7 @@ struct BarChartView: View {
                             .contentShape(Rectangle())
                             .onContinuousHover { phase in
                                 switch phase {
-                                case .active(let location):
+                               case .active(let location):
                                     self.hoverLocation = location
                                     if let xVal: String = proxy.value(atX: location.x) {
                                         // Locate closest matching data point
@@ -127,8 +129,20 @@ struct BarChartView: View {
                                 if let hovered = hoveredPoint {
                                     if selectedPointId == hovered.id {
                                         selectedPointId = nil
+                                        if let col = config.xAxisColumn {
+                                            crossFilterManager.activeFilters.removeAll { $0.sourceChartId == config.id && $0.columnName == col }
+                                        }
                                     } else {
                                         selectedPointId = hovered.id
+                                        if let col = config.xAxisColumn {
+                                            let filter = CrossFilter(
+                                                sourceChartId: config.id,
+                                                columnName: col,
+                                                filterType: .categorical(values: [hovered.x]),
+                                                label: "\(col): \(hovered.x)"
+                                            )
+                                            crossFilterManager.addFilter(filter)
+                                        }
                                     }
                                 }
                             }

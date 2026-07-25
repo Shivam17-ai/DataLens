@@ -16,6 +16,8 @@ struct AreaChartView: View {
     let highlightedSeries: Set<String>
     @ObservedObject var chartViewModel: ChartViewModel
 
+    @EnvironmentObject var crossFilterManager: CrossFilterManager
+
     // MARK: Animation
     @State private var animationProgress: Double = 0.0
     @State private var lineVisible: Bool = false
@@ -59,6 +61,10 @@ struct AreaChartView: View {
 
                             ForEach(seriesPoints) { pt in
                                 let yBaseline = baseline(for: pt.y)
+                                let ptDimmed = isPointDimmed(pt)
+                                let currentOpacity = isMuted ? 0.1 : (ptDimmed ? 0.3 : 1.0)
+                                let lineOpacity = isMuted ? 0.2 : (ptDimmed ? 0.3 : 1.0)
+                                
                                 // Filled area
                                 AreaMark(
                                     x: .value("X", pt.x),
@@ -72,7 +78,7 @@ struct AreaChartView: View {
                                         startPoint: .top, endPoint: .bottom
                                     )
                                 )
-                                .opacity(isMuted ? 0.1 : 1.0)
+                                .opacity(currentOpacity)
 
                                 // Line on top of fill
                                 if lineVisible {
@@ -83,7 +89,7 @@ struct AreaChartView: View {
                                     .interpolationMethod(config.interpolationMode == .curved ? .catmullRom : .linear)
                                     .foregroundStyle(seriesColor)
                                     .lineStyle(StrokeStyle(lineWidth: 2.0))
-                                    .opacity(isMuted ? 0.2 : 1.0)
+                                    .opacity(lineOpacity)
                                 }
                             }
                         }
@@ -96,24 +102,28 @@ struct AreaChartView: View {
                             let seriesPoints = stackedData[series] ?? []
 
                             ForEach(seriesPoints) { sp in
+                                let ptDimmed = isPointDimmed(sp)
+                                let currentOpacity = isMuted ? 0.15 : (ptDimmed ? 0.3 : 1.0)
+                                let lineOpacity = isMuted ? 0.3 : (ptDimmed ? 0.3 : 1.0)
+
                                 AreaMark(
                                     x: .value("X", sp.x),
                                     yStart: .value("YStart", sp.yStart * animationProgress),
                                     yEnd: .value("YEnd", sp.yEnd * animationProgress)
                                 )
                                 .interpolationMethod(config.interpolationMode == .curved ? .catmullRom : .linear)
-                                .foregroundStyle(seriesColor.opacity(0.7))
-                                .opacity(isMuted ? 0.2 : 1.0)
+                                .foregroundStyle(seriesColor.opacity(0.6))
+                                .opacity(currentOpacity)
 
                                 if lineVisible {
                                     LineMark(
                                         x: .value("X", sp.x),
-                                        y: .value("Y", sp.yEnd * animationProgress)
+                                        y: .value("YEnd", sp.yEnd * animationProgress)
                                     )
                                     .interpolationMethod(config.interpolationMode == .curved ? .catmullRom : .linear)
                                     .foregroundStyle(seriesColor)
                                     .lineStyle(StrokeStyle(lineWidth: 1.5))
-                                    .opacity(isMuted ? 0.2 : 1.0)
+                                    .opacity(lineOpacity)
                                 }
                             }
                         }
@@ -150,6 +160,10 @@ struct AreaChartView: View {
                             .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
                     }
                 }
+                .chartForegroundStyleScale(
+                    domain: data.seriesNames,
+                    range: colors
+                )
                 .chartYAxis {
                     AxisMarks(values: .automatic) { value in
                         if config.showGrid {
@@ -195,12 +209,30 @@ struct AreaChartView: View {
                                     hoverX = nil
                                 }
                             }
-                            .onTapGesture { location in
-                                if let xStr: String = proxy.value(atX: location.x) {
-                                    if let pt = filteredPoints.first(where: { $0.x == xStr }) {
-                                        pendingAnnotationPoint = pt
-                                        annotationDraft = ""
-                                        showAnnotationInput = true
+                            .gesture(
+                                TapGesture(count: 2)
+                                    .onEnded { _ in
+                                        if let xStr = hoverX, let pt = filteredPoints.first(where: { $0.x == xStr }) {
+                                            pendingAnnotationPoint = pt
+                                            annotationDraft = ""
+                                            showAnnotationInput = true
+                                        }
+                                    }
+                            )
+                            .onTapGesture {
+                                if let xStr = hoverX, let pt = filteredPoints.first(where: { $0.x == xStr }) {
+                                    if let col = config.xAxisColumn {
+                                        if crossFilterManager.activeFilters.contains(where: { $0.sourceChartId == config.id && $0.columnName == col }) {
+                                            crossFilterManager.activeFilters.removeAll { $0.sourceChartId == config.id && $0.columnName == col }
+                                        } else {
+                                            let targetFilter = CrossFilter(
+                                                sourceChartId: config.id,
+                                                columnName: col,
+                                                filterType: .categorical(values: [pt.x]),
+                                                label: "\(col): \(pt.x)"
+                                            )
+                                            crossFilterManager.addFilter(targetFilter)
+                                        }
                                     }
                                 }
                             }
@@ -319,6 +351,26 @@ struct AreaChartView: View {
     }
 
     // MARK: - Zoom / Pan
+
+    private func isPointDimmed(_ pt: ChartDataPoint) -> Bool {
+        guard let col = config.xAxisColumn else { return false }
+        if let filter = crossFilterManager.activeFilters.first(where: { $0.sourceChartId == config.id && $0.columnName == col }) {
+            if case .categorical(let values) = filter.filterType {
+                return !values.contains(pt.x)
+            }
+        }
+        return false
+    }
+
+    private func isPointDimmed(_ sp: StackedPoint) -> Bool {
+        guard let col = config.xAxisColumn else { return false }
+        if let filter = crossFilterManager.activeFilters.first(where: { $0.sourceChartId == config.id && $0.columnName == col }) {
+            if case .categorical(let values) = filter.filterType {
+                return !values.contains(sp.x)
+            }
+        }
+        return false
+    }
 
     private func visiblePoints() -> [ChartDataPoint] {
         guard !data.points.isEmpty else { return [] }

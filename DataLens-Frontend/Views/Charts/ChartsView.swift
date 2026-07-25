@@ -3,17 +3,23 @@ import SwiftUI
 /// ChartsView represents the main workspace for data visualization.
 /// It features a sidebar for selecting chart types, and a main canvas area
 /// with toolbar selectors (X/Y axes, title, theme, auto-sort) and the active chart.
+/// It now also hosts the cross-filter chips bar and the collapsible FilterPanelView.
 struct ChartsView: View {
     @EnvironmentObject var dataViewModel: DataViewModel
     @EnvironmentObject var toastManager: ToastManager
+    @EnvironmentObject var crossFilterManager: CrossFilterManager
     @ObservedObject var navigationViewModel: NavigationViewModel
     
     @StateObject private var chartViewModel: ChartViewModel
+    @StateObject private var filterViewModel: FilterViewModel
     @State private var highlightedSeries: Set<String> = []
+    @State private var showFilterPanel: Bool = false
     
     init(navigationViewModel: NavigationViewModel, dataViewModel: DataViewModel) {
         self.navigationViewModel = navigationViewModel
-        self._chartViewModel = StateObject(wrappedValue: ChartViewModel(dataViewModel: dataViewModel))
+        let cfm = CrossFilterManager()
+        self._chartViewModel  = StateObject(wrappedValue: ChartViewModel(dataViewModel: dataViewModel))
+        self._filterViewModel = StateObject(wrappedValue: FilterViewModel(crossFilterManager: cfm))
     }
     
     var body: some View {
@@ -63,72 +69,120 @@ struct ChartsView: View {
                 alignment: .trailing
             )
             
-            // MARK: - Right Panel: Toolbar and Canvas
-            VStack(spacing: 0) {
-                // Toolbar
-                ChartsToolbar(chartViewModel: chartViewModel)
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 14)
-                    .background(ColorPalette.sidebar.opacity(0.6))
-                    .overlay(
-                        VStack { Spacer(); Rectangle().fill(ColorPalette.border).frame(height: 1) }
-                    )
-                
-                // Canvas Area
-                ZStack {
-                    ColorPalette.background
-                        .edgesIgnoringSafeArea(.all)
-                    
-                    if dataViewModel.currentDataSet == nil {
-                        EmptyStateView(
-                            iconName: "square.and.arrow.down",
-                            title: Constants.EmptyStates.noDataTitle,
-                            subtitle: Constants.EmptyStates.noDataSubtitle,
-                            actionButtonTitle: "Import Data",
-                            action: {
-                                withAnimation {
-                                    navigationViewModel.navigate(to: .importData)
-                                }
-                            }
-                        )
-                    } else {
-                        // Interactive Chart Container
-                        ChartContainer(
-                            title: chartViewModel.chartConfig.title,
-                            config: chartViewModel.chartConfig,
-                            seriesList: chartViewModel.chartData.seriesNames,
-                            colors: chartViewModel.chartConfig.colorTheme.colors,
-                            isEmpty: chartViewModel.chartData.isEmpty,
-                            isLoading: chartViewModel.isLoading,
-                            highlightedSeries: $highlightedSeries,
-                            onExport: {
-                                chartViewModel.exportChart(view: currentChartView)
-                            }
-                        ) {
-                            currentChartView
+            // MARK: - Right Panel: Toolbar + Filter Bar + Canvas (+ optional filter panel)
+            HStack(spacing: 0) {
+                VStack(spacing: 0) {
+
+                    // ── Chart Configuration Toolbar ──────────────────────
+                    HStack(spacing: 0) {
+                        ChartsToolbar(chartViewModel: chartViewModel)
+                            .padding(.horizontal, 20)
+                            .padding(.vertical, 14)
+
+                        // Filter panel toggle button
+                        Button(action: { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { showFilterPanel.toggle() } }) {
+                            Image(systemName: showFilterPanel ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease.circle")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(crossFilterManager.hasActiveFilters ? ColorPalette.accent : ColorPalette.textSecondary)
+                                .padding(.trailing, 16)
                         }
-                        .padding(16)
+                        .buttonStyle(.plain)
+                        .help(showFilterPanel ? "Hide Filters" : "Show Filters")
                     }
+                    .background(ColorPalette.sidebar.opacity(0.6))
+                    .overlay(VStack { Spacer(); Rectangle().fill(ColorPalette.border).frame(height: 1) })
+
+                    // ── Active Filter Chips Bar ──────────────────────────
+                    if crossFilterManager.hasActiveFilters {
+                        ActiveFilterChipsBar(crossFilterManager: crossFilterManager)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+
+                    // ── Canvas Area ──────────────────────────────────────
+                    ZStack {
+                        ColorPalette.background
+                            .edgesIgnoringSafeArea(.all)
+
+                        if dataViewModel.currentDataSet == nil {
+                            EmptyStateView(
+                                iconName: "square.and.arrow.down",
+                                title: Constants.EmptyStates.noDataTitle,
+                                subtitle: Constants.EmptyStates.noDataSubtitle,
+                                actionButtonTitle: "Import Data",
+                                action: {
+                                    withAnimation { navigationViewModel.navigate(to: .importData) }
+                                }
+                            )
+                        } else if (filterViewModel.filteredDataSet?.rowCount ?? 0) == 0
+                                    && crossFilterManager.hasActiveFilters {
+                            // Empty-filtered state
+                            VStack(spacing: 12) {
+                                EmptyStateView(
+                                    iconName: "line.3.horizontal.decrease.circle",
+                                    title: "No data matches current filters",
+                                    subtitle: "Try removing a filter or widening the date range.",
+                                    actionButtonTitle: "Clear Filters",
+                                    action: { filterViewModel.clearAllFilters() }
+                                )
+                            }
+                        } else {
+                            // Interactive Chart Container
+                            ChartContainer(
+                                title: chartViewModel.chartConfig.title,
+                                config: chartViewModel.chartConfig,
+                                seriesList: chartViewModel.chartData.seriesNames,
+                                colors: chartViewModel.chartConfig.colorTheme.colors,
+                                isEmpty: chartViewModel.chartData.isEmpty,
+                                isLoading: chartViewModel.isLoading || crossFilterManager.isFiltering,
+                                highlightedSeries: $highlightedSeries,
+                                onExport: { chartViewModel.exportChart(view: currentChartView) }
+                            ) {
+                                currentChartView
+                            }
+                            .padding(16)
+                        }
+                    }
+                }
+
+                // ── Collapsible Filter Panel ─────────────────────────────
+                if showFilterPanel, let dataset = dataViewModel.currentDataSet {
+                    Rectangle().fill(ColorPalette.border).frame(width: 1)
+                    FilterPanelView(filterViewModel: filterViewModel, dataset: dataset)
+                        .frame(width: 260)
+                        .transition(.move(edge: .trailing).combined(with: .opacity))
                 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear {
-            // Bind the view model's toast notifier to our shared toast manager
+            // Bind toast notifier
             chartViewModel.onShowToast = { msg, type in
                 toastManager.show(message: msg, type: type)
             }
-            
-            // Run aggregation if dataset is already loaded
+            // Load dataset into filter pipeline and prepare initial chart
             if let dataset = dataViewModel.currentDataSet {
+                filterViewModel.load(dataset: dataset)
                 chartViewModel.prepareChartData(dataset: dataset, config: chartViewModel.chartConfig)
             }
         }
-        .onChange(of: chartViewModel.chartConfig.chartType) { newType in
-            // Keep selected chart type state updated in sync with config changes
-            chartViewModel.selectedChartType = newType
+        .onChange(of: dataViewModel.currentDataSet?.id) { _ in
             if let dataset = dataViewModel.currentDataSet {
+                filterViewModel.load(dataset: dataset)
                 chartViewModel.prepareChartData(dataset: dataset, config: chartViewModel.chartConfig)
+            }
+        }
+        .onChange(of: filterViewModel.filteredDataSet?.rowCount) { _ in
+            // Re-aggregate charts whenever the filtered row count changes
+            let dataset = filterViewModel.filteredDataSet ?? dataViewModel.currentDataSet
+            if let ds = dataset {
+                chartViewModel.prepareChartData(dataset: ds, config: chartViewModel.chartConfig)
+            }
+        }
+        .onChange(of: chartViewModel.chartConfig.chartType) { newType in
+            chartViewModel.selectedChartType = newType
+            let dataset = filterViewModel.filteredDataSet ?? dataViewModel.currentDataSet
+            if let ds = dataset {
+                chartViewModel.prepareChartData(dataset: ds, config: chartViewModel.chartConfig)
             }
         }
     }

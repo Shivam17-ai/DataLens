@@ -12,6 +12,8 @@ struct PieChartView: View {
     @ObservedObject var chartViewModel: ChartViewModel
     @EnvironmentObject var dataViewModel: DataViewModel
     
+    @EnvironmentObject var crossFilterManager: CrossFilterManager
+    
     @State private var animationProgress = 0.0
     @State private var hoveredSliceId: UUID? = nil
     @State private var clickedSliceId: UUID? = nil
@@ -80,6 +82,7 @@ struct PieChartView: View {
                     )
                     .foregroundStyle(slice.color)
                     .offset(x: isExploded ? slice.dx : 0, y: isExploded ? slice.dy : 0)
+                    .opacity(clickedSliceId == nil || clickedSliceId == slice.id ? 1.0 : 0.3)
                     // Inside label (only if >5% share)
                     .annotation(position: .overlay) {
                         if slice.percentage > 0.05 && animationProgress == 1.0 {
@@ -87,6 +90,7 @@ struct PieChartView: View {
                                 .font(.system(size: 10, weight: .bold))
                                 .foregroundColor(.white)
                                 .shadow(radius: 2)
+                                .opacity(clickedSliceId == nil || clickedSliceId == slice.id ? 1.0 : 0.3)
                         }
                     }
                 }
@@ -114,11 +118,23 @@ struct PieChartView: View {
                             }
                         }
                         .onTapGesture {
-                            if let hoveredId = hoveredSliceId {
+                            if let hoveredId = hoveredSliceId, let slice = filteredSlices.first(where: { $0.id == hoveredId }) {
                                 if clickedSliceId == hoveredId {
                                     clickedSliceId = nil
+                                    if let col = config.xAxisColumn {
+                                        crossFilterManager.activeFilters.removeAll { $0.sourceChartId == config.id && $0.columnName == col }
+                                    }
                                 } else {
                                     clickedSliceId = hoveredId
+                                    if let col = config.xAxisColumn {
+                                        let filter = CrossFilter(
+                                            sourceChartId: config.id,
+                                            columnName: col,
+                                            filterType: .categorical(values: [slice.point.x]),
+                                            label: "\(col): \(slice.point.x)"
+                                        )
+                                        crossFilterManager.addFilter(filter)
+                                    }
                                 }
                             }
                         }

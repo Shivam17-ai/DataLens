@@ -72,11 +72,36 @@ final class FilterViewModel: ObservableObject {
         crossFilterManager.removeFilter(id: id)
     }
 
-    /// Clear all cross filters, date range, and search text
+    /// Clear all cross filters, date range, search text, and category selections
     func clearAllFilters() {
         crossFilterManager.clearAllFilters()
         dateRange = nil
         filterState = FilterState()
+        scheduleFilterApplication()
+    }
+
+    // MARK: Category Filter Helpers
+
+    /// Returns the unique string values for a column (used by CategoryDropdown to populate choices)
+    func getAvailableCategories(for columnName: String, in dataset: DataSet) -> [String] {
+        var seen = Set<String>()
+        var ordered: [String] = []
+        for row in dataset.rows {
+            let val = "\(row.values[columnName] ?? "(blank)")"
+            if seen.insert(val).inserted { ordered.append(val) }
+        }
+        return ordered.sorted()
+    }
+
+    /// Programmatically set a category filter for a column
+    func setCategoryFilter(column: String, values: [String]) {
+        filterState.selectedCategories[column] = values
+        scheduleFilterApplication()
+    }
+
+    /// Remove the category filter for a specific column
+    func clearCategoryFilter(for column: String) {
+        filterState.selectedCategories.removeValue(forKey: column)
         scheduleFilterApplication()
     }
 

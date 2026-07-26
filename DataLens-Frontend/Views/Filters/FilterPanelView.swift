@@ -1,42 +1,84 @@
 import SwiftUI
 
-// MARK: - FilterPanelView
+// MARK: - FilterPanelView (Updated - Week 3 Day 2)
 
-/// Collapsible side panel (or sheet) that contains:
+/// Collapsible side panel containing:
 ///  - Active cross-filter chip list with clear buttons
 ///  - Date range slider (hidden when no date columns detected)
-///  - Search text field
+///  - SearchBarView (debounced, scoped, with history)
+///  - Category dropdown filters (one per detected text column)
 struct FilterPanelView: View {
 
     @ObservedObject var filterViewModel: FilterViewModel
     @EnvironmentObject var crossFilterManager: CrossFilterManager
 
-    /// The raw (unfiltered) dataset – used for date slider bounds and histogram
+    /// The raw (unfiltered) dataset – used for date slider bounds, histogram, and category value extraction
     let dataset: DataSet
+
+    /// Collapsed sections
+    @State private var crossFiltersExpanded: Bool = true
+    @State private var dateRangeExpanded: Bool = true
+    @State private var searchExpanded: Bool = true
+    @State private var categoriesExpanded: Bool = true
+
+    // Text columns available for category dropdowns
+    private var textColumns: [Column] {
+        dataset.columns.filter { $0.type == .string }.prefix(6).map { $0 }
+    }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-
-                // ── Header ──────────────────────────────────────────────
                 filterPanelHeader
 
                 Divider().background(ColorPalette.border)
 
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 12) {
 
-                    // ── Active Cross Filters ─────────────────────────────
+                    // ── Active Cross Filters ───────────────────────────────
                     if !crossFilterManager.activeFilters.isEmpty {
-                        activeCrossFiltersSection
+                        FilterSection(
+                            title: "Active Cross Filters",
+                            icon: "point.3.connected.trianglepath.dotted",
+                            isExpanded: $crossFiltersExpanded
+                        ) {
+                            activeCrossFiltersSection
+                        }
                     }
 
-                    // ── Date Range Slider ─────────────────────────────────
-                    dateRangeSection
+                    // ── Date Range Slider ──────────────────────────────────
+                    FilterSection(
+                        title: "Date Range",
+                        icon: "calendar",
+                        isExpanded: $dateRangeExpanded
+                    ) {
+                        dateRangeSection
+                    }
 
-                    // ── Search ────────────────────────────────────────────
-                    searchSection
+                    // ── Search ─────────────────────────────────────────────
+                    FilterSection(
+                        title: "Search",
+                        icon: "magnifyingglass",
+                        isExpanded: $searchExpanded
+                    ) {
+                        SearchBarView(
+                            filterViewModel: filterViewModel,
+                            dataset: dataset
+                        )
+                    }
 
-                    // ── Stats footer ──────────────────────────────────────
+                    // ── Category Dropdowns ─────────────────────────────────
+                    if !textColumns.isEmpty {
+                        FilterSection(
+                            title: "Category Filters",
+                            icon: "tag.fill",
+                            isExpanded: $categoriesExpanded
+                        ) {
+                            categoryFiltersSection
+                        }
+                    }
+
+                    // ── Row Count Footer ───────────────────────────────────
                     rowCountBadge
                 }
                 .padding(14)
@@ -57,9 +99,14 @@ struct FilterPanelView: View {
                 .font(.system(size: 13, weight: .bold))
                 .foregroundColor(ColorPalette.textPrimary)
             Spacer()
-            if filterViewModel.filterState.activeFilters.count > 0
+
+            let hasFilters = filterViewModel.filterState.activeFilters.count > 0
                 || crossFilterManager.hasActiveFilters
-                || filterViewModel.dateRange != nil {
+                || filterViewModel.dateRange != nil
+                || !filterViewModel.filterState.searchText.isEmpty
+                || !filterViewModel.filterState.selectedCategories.isEmpty
+
+            if hasFilters {
                 Button("Clear All") {
                     filterViewModel.clearAllFilters()
                 }
@@ -73,11 +120,7 @@ struct FilterPanelView: View {
     }
 
     private var activeCrossFiltersSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("Active Cross Filters", systemImage: "point.3.connected.trianglepath.dotted")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundColor(ColorPalette.textSecondary)
-
+        VStack(alignment: .leading, spacing: 6) {
             ForEach(crossFilterManager.activeFilters) { filter in
                 HStack(spacing: 8) {
                     Image(systemName: "tag.fill")
@@ -117,59 +160,45 @@ struct FilterPanelView: View {
         let dateColumns = filterViewModel.detectedDateColumns
 
         if dateColumns.isEmpty {
-            VStack(spacing: 6) {
+            HStack(spacing: 8) {
                 Image(systemName: "calendar.badge.exclamationmark")
-                    .font(.system(size: 20))
+                    .font(.system(size: 16))
                     .foregroundColor(ColorPalette.textSecondary.opacity(0.5))
                 Text("No date column found")
                     .font(.system(size: 11))
                     .foregroundColor(ColorPalette.textSecondary)
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
+            .padding(.vertical, 8)
         } else {
-            VStack(alignment: .leading, spacing: 8) {
-                Label("Date Range", systemImage: "calendar")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(ColorPalette.textSecondary)
-
-                ForEach(dateColumns) { column in
-                    DateRangeSlider(
-                        filterViewModel: filterViewModel,
-                        dataset: dataset,
-                        dateColumn: column
-                    )
-                }
+            ForEach(dateColumns) { column in
+                DateRangeSlider(
+                    filterViewModel: filterViewModel,
+                    dataset: dataset,
+                    dateColumn: column
+                )
             }
         }
     }
 
-    private var searchSection: some View {
+    private var categoryFiltersSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label("Search", systemImage: "magnifyingglass")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundColor(ColorPalette.textSecondary)
-
-            HStack {
-                Image(systemName: "magnifyingglass")
-                    .foregroundColor(ColorPalette.textSecondary)
-                    .font(.system(size: 12))
-                TextField("Search all columns...", text: $filterViewModel.filterState.searchText)
-                    .font(.system(size: 12))
-                    .foregroundColor(ColorPalette.textPrimary)
-                    .textFieldStyle(.plain)
-                if !filterViewModel.filterState.searchText.isEmpty {
-                    Button(action: { filterViewModel.filterState.searchText = "" }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundColor(ColorPalette.textSecondary)
-                    }
-                    .buttonStyle(.plain)
-                }
+            ForEach(textColumns) { column in
+                CategoryDropdown(
+                    column: column,
+                    dataset: dataset,
+                    filterViewModel: filterViewModel
+                )
+                .environmentObject(crossFilterManager)
             }
-            .padding(8)
-            .background(ColorPalette.background.opacity(0.5))
-            .cornerRadius(8)
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(ColorPalette.border, lineWidth: 1))
+
+            // Indicate if there are more text columns beyond the 6 shown
+            let totalText = dataset.columns.filter { $0.type == .string }.count
+            if totalText > 6 {
+                Text("+ \(totalText - 6) more columns not shown")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundColor(ColorPalette.textSecondary)
+                    .padding(.top, 2)
+            }
         }
     }
 
@@ -188,5 +217,44 @@ struct FilterPanelView: View {
                 .foregroundColor(filtered < total ? ColorPalette.warning : ColorPalette.textSecondary)
         }
         .padding(.top, 4)
+    }
+}
+
+// MARK: - FilterSection Collapsible Container
+
+private struct FilterSection<Content: View>: View {
+    let title: String
+    let icon: String
+    @Binding var isExpanded: Bool
+    let content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button(action: { withAnimation(.easeInOut(duration: 0.2)) { isExpanded.toggle() } }) {
+                HStack(spacing: 6) {
+                    Image(systemName: icon)
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(ColorPalette.accent)
+                    Text(title)
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundColor(ColorPalette.textSecondary)
+                    Spacer()
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(ColorPalette.textSecondary)
+                }
+            }
+            .buttonStyle(.plain)
+
+            if isExpanded {
+                content()
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(ColorPalette.background.opacity(0.3))
+        .cornerRadius(8)
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(ColorPalette.border.opacity(0.5), lineWidth: 1))
     }
 }

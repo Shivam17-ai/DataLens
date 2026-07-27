@@ -3,32 +3,87 @@ import SwiftUI
 // MARK: - DashboardToolbar
 
 /// Top bar of the Dashboard builder canvas. Provides:
+///   - Back button to Dashboards gallery list
+///   - Save button with status & unsaved dot indicator
 ///   - Add-card palette (chart / KPI / text / filter)
 ///   - Zoom controls with percentage display
 ///   - Preview / Edit mode toggle
 ///   - Snap-to-grid & grid-visibility toggles
-///   - Fit-to-screen and reset zoom buttons
 struct DashboardToolbar: View {
 
     @ObservedObject var dashboardViewModel: DashboardViewModel
 
     /// Callback when user wants to add a card at a default position
     var onAddCard: (CardType) -> Void
+    var onBackToList: () -> Void
 
     @State private var showAddMenu: Bool = false
 
     var body: some View {
         HStack(spacing: 0) {
-            // ── Left: Dashboard Title ─────────────────────────────────
-            HStack(spacing: 8) {
-                Image(systemName: "rectangle.3.group.fill")
-                    .foregroundColor(ColorPalette.accent)
-                    .font(.system(size: 14))
-                Text(dashboardViewModel.currentDashboard?.name ?? "Dashboard Builder")
-                    .font(.system(size: 13, weight: .bold))
-                    .foregroundColor(ColorPalette.textPrimary)
+            // ── Left: Back Button & Dashboard Title ───────────────────
+            HStack(spacing: 10) {
+                Button(action: onBackToList) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 11, weight: .bold))
+                        Image(systemName: "square.grid.2x2.fill")
+                            .font(.system(size: 12))
+                    }
+                    .foregroundColor(ColorPalette.textSecondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(ColorPalette.background.opacity(0.4))
+                    .cornerRadius(6)
+                }
+                .buttonStyle(.plain)
+                .help("Back to Dashboards List")
+
+                HStack(spacing: 6) {
+                    Text(dashboardViewModel.currentDashboard?.name ?? "Dashboard Builder")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundColor(ColorPalette.textPrimary)
+                        .lineLimit(1)
+
+                    // Unsaved Changes Amber Dot Indicator (#F59E0B)
+                    if dashboardViewModel.hasUnsavedChanges {
+                        Circle()
+                            .fill(Color(hex: "#F59E0B") ?? ColorPalette.warning)
+                            .frame(width: 7, height: 7)
+                            .help("Unsaved changes")
+                    }
+                }
+
+                // Save Button (Floppy disk)
+                Button(action: {
+                    Task {
+                        try? await dashboardViewModel.saveCurrent()
+                    }
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "square.and.arrow.down.fill")
+                            .font(.system(size: 11))
+                        Text("Save")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .foregroundColor(dashboardViewModel.hasUnsavedChanges ? ColorPalette.accent : ColorPalette.textSecondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(dashboardViewModel.hasUnsavedChanges ? ColorPalette.accent.opacity(0.15) : Color.clear)
+                    .cornerRadius(6)
+                }
+                .buttonStyle(.plain)
+                .help("Save Dashboard (Cmd+S)")
+
+                // Fading "Saving..." text indicator
+                if dashboardViewModel.isSaving {
+                    Text("Saving...")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(ColorPalette.textSecondary)
+                        .transition(.opacity)
+                }
             }
-            .frame(width: 200, alignment: .leading)
+            .frame(maxWidth: 320, alignment: .leading)
 
             Spacer()
 
@@ -64,6 +119,7 @@ struct DashboardToolbar: View {
                     isActive: dashboardViewModel.currentDashboard?.gridEnabled == true
                 ) {
                     dashboardViewModel.currentDashboard?.gridEnabled.toggle()
+                    dashboardViewModel.markDirty()
                 }
 
                 // Snap to grid toggle
@@ -73,6 +129,7 @@ struct DashboardToolbar: View {
                     isActive: dashboardViewModel.currentDashboard?.snapToGrid == true
                 ) {
                     dashboardViewModel.currentDashboard?.snapToGrid.toggle()
+                    dashboardViewModel.markDirty()
                 }
 
                 Divider()
@@ -128,8 +185,8 @@ struct DashboardToolbar: View {
                 .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 10)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
         .background(ColorPalette.sidebar)
         .overlay(
             Rectangle()

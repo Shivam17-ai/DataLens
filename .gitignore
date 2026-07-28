@@ -1,0 +1,6 @@
+# DataLens Environment Configuration
+
+# Ignore environment config files containing secrets
+.env
+.env.local
+.env.*.local

@@ -188,7 +188,12 @@ struct ChartsView: View {
     }
     
     // MARK: - Current Chart Dispatcher View
-    
+
+    /// A stable identity string for re-triggering enter animation on data/type change.
+    private var chartAnimationId: String {
+        "\(chartViewModel.chartConfig.chartType.rawValue)-\(chartViewModel.chartData.labels.count)"
+    }
+
     @ViewBuilder
     private var currentChartView: some View {
         switch chartViewModel.chartConfig.chartType {
@@ -199,6 +204,8 @@ struct ChartsView: View {
                 colors: chartViewModel.chartConfig.colorTheme.colors,
                 highlightedSeries: highlightedSeries
             )
+            .chartEnterAnimation(style: .riseUp, chartId: chartAnimationId)
+
         case .horizontalBar:
             HorizontalBarChartView(
                 config: chartViewModel.chartConfig,
@@ -206,6 +213,8 @@ struct ChartsView: View {
                 colors: chartViewModel.chartConfig.colorTheme.colors,
                 highlightedSeries: highlightedSeries
             )
+            .chartEnterAnimation(style: .sweepIn, chartId: chartAnimationId)
+
         case .line:
             LineChartView(
                 config: chartViewModel.chartConfig,
@@ -214,6 +223,8 @@ struct ChartsView: View {
                 highlightedSeries: highlightedSeries,
                 chartViewModel: chartViewModel
             )
+            .chartEnterAnimation(style: .sweepIn, chartId: chartAnimationId)
+
         case .area:
             AreaChartView(
                 config: chartViewModel.chartConfig,
@@ -222,6 +233,8 @@ struct ChartsView: View {
                 highlightedSeries: highlightedSeries,
                 chartViewModel: chartViewModel
             )
+            .chartEnterAnimation(style: .sweepIn, chartId: chartAnimationId)
+
         case .pie:
             PieChartView(
                 config: chartViewModel.chartConfig,
@@ -230,6 +243,8 @@ struct ChartsView: View {
                 highlightedSeries: highlightedSeries,
                 chartViewModel: chartViewModel
             )
+            .chartEnterAnimation(style: .scaleIn, chartId: chartAnimationId)
+
         case .donut:
             DonutChartView(
                 config: chartViewModel.chartConfig,
@@ -238,6 +253,8 @@ struct ChartsView: View {
                 highlightedSeries: highlightedSeries,
                 chartViewModel: chartViewModel
             )
+            .chartEnterAnimation(style: .scaleIn, chartId: chartAnimationId)
+
         case .scatter:
             ScatterPlotView(
                 config: chartViewModel.chartConfig,
@@ -246,6 +263,8 @@ struct ChartsView: View {
                 highlightedSeries: highlightedSeries,
                 chartViewModel: chartViewModel
             )
+            .chartEnterAnimation(style: .sweepIn, chartId: chartAnimationId)
+
         case .bubble:
             BubbleChartView(
                 config: chartViewModel.chartConfig,
@@ -254,6 +273,8 @@ struct ChartsView: View {
                 highlightedSeries: highlightedSeries,
                 chartViewModel: chartViewModel
             )
+            .chartEnterAnimation(style: .sweepIn, chartId: chartAnimationId)
+
         case .histogram:
             HistogramView(
                 config: chartViewModel.chartConfig,
@@ -262,6 +283,8 @@ struct ChartsView: View {
                 highlightedSeries: highlightedSeries,
                 chartViewModel: chartViewModel
             )
+            .chartEnterAnimation(style: .riseUp, chartId: chartAnimationId)
+
         case .boxPlot:
             BoxPlotView(
                 config: chartViewModel.chartConfig,
@@ -270,6 +293,8 @@ struct ChartsView: View {
                 highlightedSeries: highlightedSeries,
                 chartViewModel: chartViewModel
             )
+            .chartEnterAnimation(style: .dropIn, chartId: chartAnimationId)
+
         case .heatmap:
             HeatmapView(
                 config: chartViewModel.chartConfig,
@@ -278,6 +303,8 @@ struct ChartsView: View {
                 highlightedSeries: highlightedSeries,
                 chartViewModel: chartViewModel
             )
+            .chartEnterAnimation(style: .sweepIn, chartId: chartAnimationId)
+
         case .treemap:
             TreemapView(
                 config: chartViewModel.chartConfig,
@@ -286,6 +313,8 @@ struct ChartsView: View {
                 highlightedSeries: highlightedSeries,
                 chartViewModel: chartViewModel
             )
+            .chartEnterAnimation(style: .scaleIn, chartId: chartAnimationId)
+
         case .waterfall:
             WaterfallChartView(
                 config: chartViewModel.chartConfig,
@@ -294,6 +323,8 @@ struct ChartsView: View {
                 highlightedSeries: highlightedSeries,
                 chartViewModel: chartViewModel
             )
+            .chartEnterAnimation(style: .riseUp, chartId: chartAnimationId)
+
         case .funnel:
             FunnelChartView(
                 config: chartViewModel.chartConfig,
@@ -302,6 +333,8 @@ struct ChartsView: View {
                 highlightedSeries: highlightedSeries,
                 chartViewModel: chartViewModel
             )
+            .chartEnterAnimation(style: .riseUp, chartId: chartAnimationId)
+
         case .gauge:
             GaugeChartView(
                 config: chartViewModel.chartConfig,
@@ -310,12 +343,15 @@ struct ChartsView: View {
                 highlightedSeries: highlightedSeries,
                 chartViewModel: chartViewModel
             )
+            .chartEnterAnimation(style: .scaleIn, chartId: chartAnimationId)
+
         default:
             EmptyStateView(
                 iconName: chartViewModel.chartConfig.chartType.iconName,
                 title: "\(chartViewModel.chartConfig.chartType.rawValue) Chart",
                 subtitle: "Visualization layout is coming soon."
             )
+            .chartEnterAnimation(style: .uniform, chartId: chartAnimationId)
         }
     }
 }

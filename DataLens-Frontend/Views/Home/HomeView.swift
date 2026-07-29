@@ -5,21 +5,28 @@ struct HomeView: View {
     @StateObject private var viewModel = HomeViewModel()
     @ObservedObject var navigationViewModel: NavigationViewModel
     @EnvironmentObject var dataViewModel: DataViewModel
+    @ObservedObject var activityLog = ActivityLog.shared
     
     // Staggered card animation state
     @State private var cardsAppeared = false
+    
+    // Animated counter states
+    @State private var datasetsCounter: Int = 0
+    @State private var chartsCounter: Int = 0
+    @State private var dashboardsCounter: Int = 0
+    @State private var aiCounter: Int = 0
     
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
                 
-                // MARK: – Hero Header
+                // MARK: - Hero Header
                 HeroHeaderView(navigationViewModel: navigationViewModel)
                 
-                // MARK: – Stats Section
+                // MARK: - Stats Section
                 VStack(alignment: .leading, spacing: 16) {
                     Text(AppConstants.Stats.sectionHeader)
-                        .font(.system(size: 16, weight: .bold))
+                        .font(Constants.Typography.headline)
                         .foregroundColor(ColorPalette.textPrimary)
                     
                     LazyVGrid(columns: [
@@ -28,36 +35,61 @@ struct HomeView: View {
                         GridItem(.flexible(), spacing: 16),
                         GridItem(.flexible(), spacing: 16)
                     ], spacing: 16) {
-                        let statItems: [(String, String, String, Color, Double)] = [
-                            (AppConstants.Stats.totalDatasets,        "\(viewModel.totalDatasets)",       AppConstants.Icons.importData, ColorPalette.success, 0.0),
-                            (AppConstants.Stats.totalCharts,          "\(viewModel.totalCharts)",         AppConstants.Icons.charts,     ColorPalette.accent,  0.1),
-                            (AppConstants.Stats.dashboardsCreated,    "\(viewModel.dashboardsCreated)",   AppConstants.Icons.dashboard,  ColorPalette.warning, 0.2),
-                            (AppConstants.Stats.aiInsightsGenerated,  "\(viewModel.aiInsightsGenerated)", AppConstants.Icons.aiInsights, ColorPalette.success, 0.3)
-                        ]
-                        ForEach(statItems, id: \.0) { title, value, icon, color, delay in
-                            StatCardView(
-                                title: title,
-                                value: value,
-                                iconName: icon,
-                                accentColor: color
-                            )
-                            .opacity(cardsAppeared ? 1 : 0)
-                            .offset(y: cardsAppeared ? 0 : 20)
-                            .animation(
-                                .spring(response: 0.5, dampingFraction: 0.75).delay(delay),
-                                value: cardsAppeared
-                            )
-                        }
+                        
+                        StatCardView(
+                            title: AppConstants.Stats.totalDatasets,
+                            value: datasetsCounter,
+                            iconName: AppConstants.Icons.importData,
+                            accentColor: ColorPalette.success
+                        )
+                        .opacity(cardsAppeared ? 1 : 0)
+                        .offset(y: cardsAppeared ? 0 : 20)
+                        .animation(.spring(response: 0.5, dampingFraction: 0.75).delay(0.0), value: cardsAppeared)
+                        
+                        StatCardView(
+                            title: AppConstants.Stats.totalCharts,
+                            value: chartsCounter,
+                            iconName: AppConstants.Icons.charts,
+                            accentColor: ColorPalette.accent
+                        )
+                        .opacity(cardsAppeared ? 1 : 0)
+                        .offset(y: cardsAppeared ? 0 : 20)
+                        .animation(.spring(response: 0.5, dampingFraction: 0.75).delay(0.1), value: cardsAppeared)
+                        
+                        StatCardView(
+                            title: AppConstants.Stats.dashboardsCreated,
+                            value: dashboardsCounter,
+                            iconName: AppConstants.Icons.dashboard,
+                            accentColor: ColorPalette.warning
+                        )
+                        .opacity(cardsAppeared ? 1 : 0)
+                        .offset(y: cardsAppeared ? 0 : 20)
+                        .animation(.spring(response: 0.5, dampingFraction: 0.75).delay(0.2), value: cardsAppeared)
+                        
+                        StatCardView(
+                            title: AppConstants.Stats.aiInsightsGenerated,
+                            value: aiCounter,
+                            iconName: AppConstants.Icons.aiInsights,
+                            accentColor: ColorPalette.success
+                        )
+                        .opacity(cardsAppeared ? 1 : 0)
+                        .offset(y: cardsAppeared ? 0 : 20)
+                        .animation(.spring(response: 0.5, dampingFraction: 0.75).delay(0.3), value: cardsAppeared)
+                        
                     }
                 }
                 .padding(Constants.Layout.outerPadding)
-                .onAppear { cardsAppeared = true }
+                .onAppear {
+                    viewModel.refreshStats()
+                    cardsAppeared = true
+                    triggerCounters()
+                }
                 
                 Divider()
                     .background(ColorPalette.border)
                     .padding(.horizontal, Constants.Layout.outerPadding)
                 
-                // MARK: – Quick Actions
+                // MARK: - Quick Actions
                 QuickActionsSection(navigationViewModel: navigationViewModel)
                     .padding(Constants.Layout.outerPadding)
                 
@@ -65,7 +97,15 @@ struct HomeView: View {
                     .background(ColorPalette.border)
                     .padding(.horizontal, Constants.Layout.outerPadding)
                 
-                // MARK: – Recent Files
+                // MARK: - Recent Activity Feed (In-Memory)
+                RecentActivitySection()
+                    .padding(Constants.Layout.outerPadding)
+                
+                Divider()
+                    .background(ColorPalette.border)
+                    .padding(.horizontal, Constants.Layout.outerPadding)
+                
+                // MARK: - Recent Files
                 RecentFilesSection(navigationViewModel: navigationViewModel)
                     .padding(Constants.Layout.outerPadding)
                     .padding(.bottom, 40)
@@ -73,6 +113,36 @@ struct HomeView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(ColorPalette.background)
+    }
+    
+    private func triggerCounters() {
+        datasetsCounter = 0
+        chartsCounter = 0
+        dashboardsCounter = 0
+        aiCounter = 0
+        
+        let steps = 25
+        let duration = 0.6
+        let interval = duration / Double(steps)
+        
+        var currentStep = 0
+        Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { timer in
+            currentStep += 1
+            let ratio = Double(currentStep) / Double(steps)
+            
+            datasetsCounter = Int(Double(viewModel.totalDatasets) * ratio)
+            chartsCounter = Int(Double(viewModel.totalCharts) * ratio)
+            dashboardsCounter = Int(Double(viewModel.dashboardsCreated) * ratio)
+            aiCounter = Int(Double(viewModel.aiInsightsGenerated) * ratio)
+            
+            if currentStep >= steps {
+                timer.invalidate()
+                datasetsCounter = viewModel.totalDatasets
+                chartsCounter = viewModel.totalCharts
+                dashboardsCounter = viewModel.dashboardsCreated
+                aiCounter = viewModel.aiInsightsGenerated
+            }
+        }
     }
 }
 
@@ -106,7 +176,7 @@ struct HeroHeaderView: View {
                 }
                 
                 Text(Constants.App.tagline)
-                    .font(.system(size: 15, weight: .regular))
+                    .font(Constants.Typography.body)
                     .foregroundColor(ColorPalette.textSecondary)
                 
                 Button(action: {
@@ -132,12 +202,10 @@ struct QuickActionsSection: View {
     @ObservedObject var navigationViewModel: NavigationViewModel
     @EnvironmentObject var dataViewModel: DataViewModel
     
-    let actions: [(String, String, Color, () -> Void)] = []
-    
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Quick Actions")
-                .font(.system(size: 16, weight: .bold))
+                .font(Constants.Typography.headline)
                 .foregroundColor(ColorPalette.textPrimary)
             
             HStack(spacing: 16) {
@@ -177,18 +245,18 @@ struct QuickActionButton: View {
                         .foregroundColor(color)
                 }
                 Text(label)
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(Constants.Typography.caption)
                     .foregroundColor(ColorPalette.textPrimary)
                     .multilineTextAlignment(.center)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 18)
             .background(
-                RoundedRectangle(cornerRadius: Constants.Layout.cornerRadius)
+                RoundedRectangle(cornerRadius: Constants.Radius.medium)
                     .fill(isHovered ? ColorPalette.cards : ColorPalette.sidebar)
             )
             .overlay(
-                RoundedRectangle(cornerRadius: Constants.Layout.cornerRadius)
+                RoundedRectangle(cornerRadius: Constants.Radius.medium)
                     .stroke(isHovered ? color.opacity(0.6) : ColorPalette.border, lineWidth: 1)
             )
             .offset(y: isHovered ? -3 : 0)
@@ -196,6 +264,71 @@ struct QuickActionButton: View {
         .buttonStyle(.plain)
         .onHover { h in
             withAnimation(.easeInOut(duration: Constants.Animation.instant)) { isHovered = h }
+        }
+    }
+}
+
+// MARK: - Recent Activity Section
+
+struct RecentActivitySection: View {
+    @ObservedObject var activityLog = ActivityLog.shared
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Recent Activity")
+                .font(Constants.Typography.headline)
+                .foregroundColor(ColorPalette.textPrimary)
+            
+            if activityLog.items.isEmpty {
+                HStack(spacing: 12) {
+                    Image(systemName: "clock")
+                        .font(.system(size: 20))
+                        .foregroundColor(ColorPalette.textSecondary.opacity(0.5))
+                    Text(Constants.EmptyStates.noActivitySubtitle)
+                        .font(Constants.Typography.body)
+                        .foregroundColor(ColorPalette.textSecondary)
+                }
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(ColorPalette.cards.opacity(0.4))
+                .cornerRadius(Constants.Radius.medium)
+                .highContrastBorder()
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(activityLog.items) { item in
+                        HStack(spacing: 14) {
+                            ZStack {
+                                Circle()
+                                    .fill(item.color.opacity(0.12))
+                                    .frame(width: 32, height: 32)
+                                Image(systemName: item.iconName)
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundColor(item.color)
+                            }
+                            
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(item.action)
+                                    .font(Constants.Typography.body)
+                                    .foregroundColor(ColorPalette.textPrimary)
+                                Text(item.description)
+                                    .font(Constants.Typography.small)
+                                    .foregroundColor(ColorPalette.textSecondary)
+                            }
+                            
+                            Spacer()
+                            
+                            Text(item.timestamp.relativeLabel)
+                                .font(Constants.Typography.small)
+                                .foregroundColor(ColorPalette.textSecondary.opacity(0.8))
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(ColorPalette.sidebar.opacity(0.6))
+                        .cornerRadius(Constants.Radius.small)
+                        .highContrastBorder(radius: Constants.Radius.small)
+                    }
+                }
+            }
         }
     }
 }
@@ -210,7 +343,7 @@ struct RecentFilesSection: View {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 Text("Recent Files")
-                    .font(.system(size: 16, weight: .bold))
+                    .font(Constants.Typography.headline)
                     .foregroundColor(ColorPalette.textPrimary)
                 Spacer()
                 if !dataViewModel.recentFiles.isEmpty {
@@ -264,7 +397,7 @@ struct RecentFileRow: View {
             HStack(spacing: 14) {
                 // File type icon
                 ZStack {
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: Constants.Radius.small)
                         .fill(file.fileType == .csv ? ColorPalette.success.opacity(0.15) : Color(hex: "#34D399").opacity(0.15))
                         .frame(width: 38, height: 38)
                     Image(systemName: file.fileType.iconName)
@@ -275,11 +408,11 @@ struct RecentFileRow: View {
                 // File info
                 VStack(alignment: .leading, spacing: 3) {
                     Text(file.name)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(Constants.Typography.body)
                         .foregroundColor(ColorPalette.textPrimary)
                         .lineLimit(1)
                     Text("\(file.rowCount.formatted()) rows  ·  \(dateFormatter.string(from: file.importDate))")
-                        .font(.system(size: 11))
+                        .font(Constants.Typography.small)
                         .foregroundColor(ColorPalette.textSecondary)
                 }
                 
@@ -315,7 +448,7 @@ struct RecentFileRow: View {
 
 struct StatCardView: View {
     let title: String
-    let value: String
+    let value: Int
     let iconName: String
     let accentColor: Color
     
@@ -324,11 +457,11 @@ struct StatCardView: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 8) {
                     Text(title)
-                        .font(.system(size: 12, weight: .regular))
+                        .font(Constants.Typography.caption)
                         .foregroundColor(ColorPalette.textSecondary)
                     
-                    Text(value)
-                        .font(.system(size: 28, weight: .bold))
+                    Text("\(value)")
+                        .font(Constants.Typography.largeTitle)
                         .foregroundColor(ColorPalette.textPrimary)
                 }
                 

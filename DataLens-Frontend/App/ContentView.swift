@@ -3,9 +3,11 @@ import SwiftUI
 /// ContentView defines the main NavigationSplitView layout of the DataLens application
 struct ContentView: View {
     @EnvironmentObject var dataViewModel: DataViewModel
+    @EnvironmentObject var keyboardManager: KeyboardShortcutsManager
     @StateObject private var navigationViewModel = NavigationViewModel()
     
     @AppStorage("hasCompletedOnboarding") var hasCompletedOnboarding: Bool = false
+    @AppStorage(Constants.AppStorageKeys.enableReduceMotion) var enableReduceMotion: Bool = false
     
     var body: some View {
         ZStack {
@@ -26,7 +28,9 @@ struct ContentView: View {
                     case .aiInsights:
                         PlaceholderDetailView(title: AppConstants.Sidebar.aiInsights)
                     case .export:
-                        PlaceholderDetailView(title: AppConstants.Sidebar.export)
+                        ExportView()
+                    case .settings:
+                        SettingsView()
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -49,6 +53,43 @@ struct ContentView: View {
                     .shadow(color: Color.black.opacity(0.5), radius: 24, x: 0, y: 12)
                     .transition(.scale(scale: 0.9).combined(with: .opacity))
                     .zIndex(100)
+            }
+            
+            // Keyboard Shortcuts Reference Overlay
+            if keyboardManager.showShortcutsPanel {
+                ShortcutsOverlayView(manager: keyboardManager)
+                    .zIndex(150)
+            }
+            
+            // Diagnostics HUD overlay (placed in bottom-right corner)
+            VStack {
+                Spacer()
+                HStack {
+                    Spacer()
+                    PerformanceOverlayView()
+                }
+            }
+            .allowsHitTesting(false) // Click-through diagnostic overlay
+            .zIndex(200)
+        }
+        .onAppear {
+            setupKeyboardManager()
+        }
+    }
+    
+    private func setupKeyboardManager() {
+        keyboardManager.startListening()
+        
+        keyboardManager.onNavigate = { item in
+            withAnimation(enableReduceMotion ? nil : .easeInOut(duration: Constants.Animation.standard)) {
+                navigationViewModel.navigate(to: item)
+            }
+        }
+        
+        keyboardManager.onClosePanel = {
+            // Dismiss active modals or panels if escape is pressed
+            if keyboardManager.showShortcutsPanel {
+                keyboardManager.showShortcutsPanel = false
             }
         }
     }

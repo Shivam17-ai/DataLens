@@ -9,6 +9,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
     case charts
     case aiInsights
     case export
+    case settings
     
     var id: String { self.rawValue }
     
@@ -20,6 +21,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
         case .charts: return AppConstants.Sidebar.charts
         case .aiInsights: return AppConstants.Sidebar.aiInsights
         case .export: return AppConstants.Sidebar.export
+        case .settings: return Constants.Sidebar.settings
         }
     }
     
@@ -31,6 +33,7 @@ enum SidebarItem: String, CaseIterable, Identifiable {
         case .charts: return AppConstants.Icons.charts
         case .aiInsights: return AppConstants.Icons.aiInsights
         case .export: return AppConstants.Icons.export
+        case .settings: return "gearshape.fill"
         }
     }
 }

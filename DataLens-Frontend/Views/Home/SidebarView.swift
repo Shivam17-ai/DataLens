@@ -1,5 +1,7 @@
 import SwiftUI
 
+// MARK: - SidebarView
+
 /// SidebarView represents the navigation panel on the left of the main NavigationSplitView.
 struct SidebarView: View {
     @ObservedObject var viewModel: NavigationViewModel
@@ -27,6 +29,7 @@ struct SidebarView: View {
             .padding(.horizontal, 20)
             .padding(.top, 24)
             .padding(.bottom, 12)
+            .accessibilityElement(children: .combine)
             
             Divider()
                 .background(ColorPalette.border)
@@ -35,10 +38,11 @@ struct SidebarView: View {
             
             // Navigation Links Stack
             VStack(spacing: 4) {
-                ForEach(SidebarItem.allCases) { item in
+                ForEach(SidebarItem.allCases.filter { $0 != .settings }) { item in
                     SidebarItemButton(
                         item: item,
-                        isSelected: viewModel.selectedItem == item
+                        isSelected: viewModel.selectedItem == item,
+                        shortcutHint: shortcutHint(for: item)
                     ) {
                         withAnimation(.easeInOut(duration: Constants.Animation.standard)) {
                             viewModel.navigate(to: item)
@@ -58,11 +62,20 @@ struct SidebarView: View {
             // Bottom of sidebar utilities
             VStack(alignment: .leading, spacing: 12) {
                 SidebarBottomButton(iconName: "gearshape.fill", title: Constants.Sidebar.settings) {
-                    // Settings action trigger placeholder
+                    withAnimation(.easeInOut(duration: Constants.Animation.standard)) {
+                        viewModel.navigate(to: .settings)
+                    }
                 }
+                .accessibilityLabel("Open Settings screen")
+                .accessibilityHint("Keyboard shortcut command comma")
+                
                 SidebarBottomButton(iconName: "questionmark.circle.fill", title: Constants.Sidebar.help) {
-                    // Help action trigger placeholder
+                    // Help trigger
+                    if let url = URL(string: Constants.App.githubURL) {
+                        NSWorkspace.shared.open(url)
+                    }
                 }
+                .accessibilityLabel("Open Help documentation")
                 
                 Text("\(Constants.App.name) v\(Constants.App.version) (\(Constants.App.buildNumber))")
                     .font(.system(size: 9))
@@ -75,12 +88,27 @@ struct SidebarView: View {
         .frame(minWidth: 200, idealWidth: 240, maxWidth: 300)
         .background(ColorPalette.sidebar)
     }
+    
+    private func shortcutHint(for item: SidebarItem) -> String? {
+        switch item {
+        case .home:       return "⌘1"
+        case .importData: return "⌘2"
+        case .dashboard:  return "⌘3"
+        case .charts:     return "⌘4"
+        case .aiInsights: return "⌘5"
+        case .export:     return "⌘6"
+        default:          return nil
+        }
+    }
 }
+
+// MARK: - SidebarItemButton
 
 /// A custom, highly responsive button for each navigation item in the Sidebar
 struct SidebarItemButton: View {
     let item: SidebarItem
     let isSelected: Bool
+    let shortcutHint: String?
     let action: () -> Void
     
     @State private var isHovered = false
@@ -106,9 +134,20 @@ struct SidebarItemButton: View {
                     .foregroundColor(isSelected ? .white : (isHovered ? ColorPalette.textPrimary : ColorPalette.textSecondary))
                 
                 Spacer()
+                
+                // Keyboard shortcut hint
+                if let hint = shortcutHint {
+                    Text(hint)
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(ColorPalette.textSecondary.opacity(0.6))
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(ColorPalette.background.opacity(0.4))
+                        .cornerRadius(3)
+                }
             }
             .padding(.vertical, 8)
-            .padding(.leading, 8) // subtle left padding for nav items
+            .padding(.leading, 8)
             .padding(.trailing, 8)
             .background(
                 RoundedRectangle(cornerRadius: 6)
@@ -118,7 +157,8 @@ struct SidebarItemButton: View {
                         : (isHovered ? ColorPalette.accent.opacity(0.08) : Color.clear)
                     )
             )
-            .contentShape(Rectangle()) // Makes the whole area click-sensitive
+            .focusBorder(isFocused: isSelected, radius: 6)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { hovering in
@@ -126,8 +166,12 @@ struct SidebarItemButton: View {
                 isHovered = hovering
             }
         }
+        .accessibilityLabel("Go to \(item.title)")
+        .accessibilityHint(shortcutHint != nil ? "Keyboard shortcut \(shortcutHint!)" : "")
     }
 }
+
+// MARK: - SidebarBottomButton
 
 /// SidebarBottomButton presents gear settings and help buttons at the footer
 struct SidebarBottomButton: View {

@@ -112,6 +112,11 @@ class DataViewModel: ObservableObject {
 
     // MARK: Import State
     @Published var currentDataSet: DataSet? = nil
+    
+    var datasets: [DataSet] {
+        return [currentDataSet].compactMap { $0 }
+    }
+    
     @Published var isLoading: Bool          = false
     @Published var errorMessage: String?    = nil
     @Published var isImportSuccess: Bool    = false

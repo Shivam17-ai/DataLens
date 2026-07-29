@@ -30,6 +30,15 @@ extension Date {
         formatter.timeStyle = .none
         return formatter.string(from: self)
     }
+
+    /// Returns a compact relative string: "just now", "2m ago", "1h ago", "yesterday"
+    var relativeLabel: String {
+        let secs = Int(-timeIntervalSinceNow)
+        if secs < 60  { return "just now" }
+        if secs < 3600 { return "\(secs / 60)m ago" }
+        if secs < 86400 { return "\(secs / 3600)h ago" }
+        return "\(secs / 86400)d ago"
+    }
 }
 
 // MARK: - Color Hex Initialization
@@ -45,7 +54,7 @@ extension Color {
 
 struct CardStyleModifier: ViewModifier {
     var isHovered: Bool
-    
+
     func body(content: Content) -> some View {
         content
             .background(ColorPalette.cardGradient)
@@ -69,7 +78,7 @@ struct CardStyleModifier: ViewModifier {
 
 struct ShimmerModifier: ViewModifier {
     @State private var phase: CGFloat = 0
-    
+
     func body(content: Content) -> some View {
         content
             .overlay(
@@ -102,15 +111,130 @@ struct ShimmerModifier: ViewModifier {
     }
 }
 
+// MARK: - Focus Ring Modifier
+
+struct FocusBorderModifier: ViewModifier {
+    var isFocused: Bool
+    var radius: CGFloat = Constants.Radius.medium
+    var color: Color = ColorPalette.accent
+
+    func body(content: Content) -> some View {
+        content.overlay(
+            RoundedRectangle(cornerRadius: radius)
+                .stroke(color.opacity(isFocused ? 1.0 : 0.0), lineWidth: 2)
+                .shadow(color: color.opacity(isFocused ? 0.4 : 0.0), radius: 4, x: 0, y: 0)
+                .animation(.easeInOut(duration: Constants.Animation.instant), value: isFocused)
+        )
+    }
+}
+
+// MARK: - Interactive Scale Modifier
+
+struct InteractiveScaleModifier: ViewModifier {
+    var isPressed: Bool
+    var scale: CGFloat = 0.97
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(isPressed ? scale : 1.0)
+            .animation(.easeInOut(duration: Constants.Animation.instant), value: isPressed)
+    }
+}
+
+// MARK: - Reduce-Motion-Aware Animation
+
+/// Applies a spring animation that collapses to an instant transition
+/// when the user has enabled Reduce Motion in System Settings.
+struct ReduceMotionAwareAnimationModifier: ViewModifier {
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
+    var value: Bool
+
+    func body(content: Content) -> some View {
+        if reduceMotion {
+            content
+        } else {
+            content.animation(.spring(response: 0.45, dampingFraction: 0.72), value: value)
+        }
+    }
+}
+
+// MARK: - Shadow Convenience Modifier
+
+struct AppShadowModifier: ViewModifier {
+    let definition: Constants.Shadow.Definition
+
+    func body(content: Content) -> some View {
+        content.shadow(
+            color: definition.color,
+            radius: definition.radius,
+            x: definition.x,
+            y: definition.y
+        )
+    }
+}
+
+// MARK: - High Contrast Border Modifier
+
+struct HighContrastBorderModifier: ViewModifier {
+    @Environment(\.accessibilityDifferentiateWithoutColor) var diffWithoutColor
+    var radius: CGFloat = Constants.Radius.medium
+    var color: Color = ColorPalette.border
+
+    func body(content: Content) -> some View {
+        content.overlay(
+            RoundedRectangle(cornerRadius: radius)
+                .stroke(color, lineWidth: diffWithoutColor ? 2.0 : 1.0)
+        )
+    }
+}
+
+// MARK: - View Extensions
+
 extension View {
     /// Wraps the view in the custom card container styling with hover animations.
     func cardStyle(isHovered: Bool = false) -> some View {
         self.modifier(CardStyleModifier(isHovered: isHovered))
     }
-    
+
     /// Applies a linear shimmering overlay to the view representing active loading states.
     func shimmer() -> some View {
         self.modifier(ShimmerModifier())
+    }
+
+    /// Applies a keyboard-focus ring around the view using accent color.
+    func focusBorder(isFocused: Bool, radius: CGFloat = Constants.Radius.medium) -> some View {
+        self.modifier(FocusBorderModifier(isFocused: isFocused, radius: radius))
+    }
+
+    /// Applies the standard pressed-scale interaction (0.97) with 0.15s easing.
+    func interactiveScale(isPressed: Bool) -> some View {
+        self.modifier(InteractiveScaleModifier(isPressed: isPressed))
+    }
+
+    /// Applies a token-based shadow from the Constants.Shadow system.
+    func appShadow(_ definition: Constants.Shadow.Definition) -> some View {
+        self.modifier(AppShadowModifier(definition: definition))
+    }
+
+    /// Applies a spring animation that automatically degrades to instant
+    /// when Reduce Motion is enabled in System Settings.
+    func reduceMotionAnimation(value: Bool) -> some View {
+        self.modifier(ReduceMotionAwareAnimationModifier(value: value))
+    }
+
+    /// Applies a border that thickens automatically under high-contrast mode.
+    func highContrastBorder(radius: CGFloat = Constants.Radius.medium) -> some View {
+        self.modifier(HighContrastBorderModifier(radius: radius))
+    }
+
+    /// Generates a descriptive accessibility label for any chart summary.
+    /// - Parameters:
+    ///   - chartType: Human-readable name of the chart type.
+    ///   - summary: Pre-computed summary sentence (highest value, count, etc.)
+    func accessibilityChartLabel(chartType: String, summary: String) -> some View {
+        self
+            .accessibilityLabel("\(chartType) chart. \(summary)")
+            .accessibilityAddTraits(.isStaticText)
     }
 }
 
@@ -122,5 +246,14 @@ extension Array {
         return stride(from: 0, to: count, by: size).map {
             Array(self[$0 ..< Swift.min($0 + size, count)])
         }
+    }
+}
+
+// MARK: - String Helpers
+
+extension String {
+    /// Returns true if this string contains another string, case-insensitively.
+    func containsIgnoringCase(_ other: String) -> Bool {
+        self.range(of: other, options: .caseInsensitive) != nil
     }
 }

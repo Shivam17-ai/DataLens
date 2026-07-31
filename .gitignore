@@ -1,6 +1,39 @@
 # DataLens Environment Configuration
-
 # Ignore environment config files containing secrets
 .env
 .env.local
 .env.*.local
+
+# macOS System Files
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon\r
+._*
+.DocumentRevisions-V100
+.Spotlight-V100
+.Trashes
+VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# Xcode User Data / Build Artifacts
+build/
+DerivedData/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Packages/
+Package.resolved
+
+# Backups & Temp files
+*.bak
+*.tmp
+*.swp
+*~
